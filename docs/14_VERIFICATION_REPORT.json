@@ -1,0 +1,104 @@
+{
+    "report_type":  "DOCUMENT_VERIFICATION_ONLY",
+    "client_date":  "2026-10-09",
+    "timezone":  "Asia/Saigon",
+    "required_documents_present":  true,
+    "source_copy_hash_matches":  true,
+    "planned_test_cases":  25,
+    "open_questions":  17,
+    "attendance_software_tests":  "NOT_RUN",
+    "xlsx_audit":  "BLOCKED_MISSING_SX_XLSX",
+    "phase0_complete":  false,
+    "file_inventory":  [
+                           {
+                               "path":  "D:\\tinhCong\\AGENTS.md",
+                               "bytes":  3133,
+                               "sha256":  "EF243B0DCA3288150AFE6CDC6DD5C54B5196435E43BB263ABC9CE72ECE232CDE",
+                               "utf8_valid":  true
+                           },
+                           {
+                               "path":  "D:\\tinhCong\\docs\\00_SOURCE_REQUIREMENTS.txt",
+                               "bytes":  18256,
+                               "sha256":  "587F8E353C973787A0B608A00991DD5392E9010B8EDDE744B6164123C0C4E4D0",
+                               "utf8_valid":  true
+                           },
+                           {
+                               "path":  "D:\\tinhCong\\docs\\01_BUSINESS_REQUIREMENTS.md",
+                               "bytes":  4228,
+                               "sha256":  "A057C849C423D199B9B07CC9BF23B33FE276B65B6C34D2562942A1A8B91A909E",
+                               "utf8_valid":  true
+                           },
+                           {
+                               "path":  "D:\\tinhCong\\docs\\02_ATTENDANCE_RULES.md",
+                               "bytes":  3024,
+                               "sha256":  "0AE2C93350FF725017C7BE5A8708E8A735E34560924744F807C940188F34D9EF",
+                               "utf8_valid":  true
+                           },
+                           {
+                               "path":  "D:\\tinhCong\\docs\\03_SYSTEM_ARCHITECTURE.md",
+                               "bytes":  3296,
+                               "sha256":  "9E0C636BB36C09D18C1A98B3F76602B097E1C6225BDCDA94732E0DC721444FEB",
+                               "utf8_valid":  true
+                           },
+                           {
+                               "path":  "D:\\tinhCong\\docs\\04_DATABASE_DESIGN.md",
+                               "bytes":  4375,
+                               "sha256":  "5C8F0C10EAF48546CD8A0D02B56223A24007A6B64C08357462285FFD79BB0C0B",
+                               "utf8_valid":  true
+                           },
+                           {
+                               "path":  "D:\\tinhCong\\docs\\05_API_SPECIFICATION.md",
+                               "bytes":  3523,
+                               "sha256":  "999C67A2FC4DA024D8A046DD23CD39B58B7533DC9C6CD7FA3434F84AE4CCB0D9",
+                               "utf8_valid":  true
+                           },
+                           {
+                               "path":  "D:\\tinhCong\\docs\\06_UI_UX_SPECIFICATION.md",
+                               "bytes":  2550,
+                               "sha256":  "A47278A2AB5E22C05EB747B3341D6F7C9F9D40BA1A96863379CF23ED38BBD495",
+                               "utf8_valid":  true
+                           },
+                           {
+                               "path":  "D:\\tinhCong\\docs\\07_WORKFLOW.md",
+                               "bytes":  2282,
+                               "sha256":  "429F8181E4B7F869B3681E9E299E7A369581DD048223B12E0CCDD295EFCAAC23",
+                               "utf8_valid":  true
+                           },
+                           {
+                               "path":  "D:\\tinhCong\\docs\\08_TEST_CASES.md",
+                               "bytes":  4678,
+                               "sha256":  "FC24318788C867E8DC89C59A23508D53FE400A64286389DD05C3D7EA8CFC65B9",
+                               "utf8_valid":  true
+                           },
+                           {
+                               "path":  "D:\\tinhCong\\docs\\09_UAT_CHECKLIST.md",
+                               "bytes":  3075,
+                               "sha256":  "EF8FE9E2A228B29361BAAB601BFAE0D3C6177409974DB3E699D238FBA9D7DC47",
+                               "utf8_valid":  true
+                           },
+                           {
+                               "path":  "D:\\tinhCong\\docs\\10_DEPLOYMENT_GUIDE.md",
+                               "bytes":  2154,
+                               "sha256":  "02B23C3D6D4D5972701BEBA51BCD4DFB7DF00F37D5D7A82CEA3F6A58AC14B938",
+                               "utf8_valid":  true
+                           },
+                           {
+                               "path":  "D:\\tinhCong\\docs\\11_SECURITY_AND_AUDIT.md",
+                               "bytes":  2575,
+                               "sha256":  "2D6EADFD34A544E272FA750F0BDC9036EB123CCF80D7364FB2DBB93B5DA07FF6",
+                               "utf8_valid":  true
+                           },
+                           {
+                               "path":  "D:\\tinhCong\\docs\\12_OPEN_QUESTIONS.md",
+                               "bytes":  3825,
+                               "sha256":  "C5AE1FA2A0960C662D0FAD43A7846FD0DD014FFC30BDAEC094A96F87C396BB25",
+                               "utf8_valid":  true
+                           },
+                           {
+                               "path":  "D:\\tinhCong\\docs\\13_PROGRESS_REPORT.md",
+                               "bytes":  3443,
+                               "sha256":  "682F55EFC57013F0C64BA0450E49D558B34473D16FEB40DC174AAE0EC1BC33C6",
+                               "utf8_valid":  true
+                           }
+                       ]
+}

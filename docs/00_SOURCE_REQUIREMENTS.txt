@@ -1,0 +1,656 @@
+# MASTER PROMPT – XÂY DỰNG PHẦN MỀM QUẢN LÝ CHẤM CÔNG TỰ ĐỘNG
+
+## 1. VAI TRÒ CỦA AI
+
+Bạn là một nhóm chuyên gia phát triển phần mềm gồm:
+
+- Senior Business Analyst với 20 năm kinh nghiệm phân tích nghiệp vụ nhân sự, chấm công và tính lương.
+- Senior Software Architect với 15 năm kinh nghiệm thiết kế hệ thống doanh nghiệp.
+- Senior Full-stack Developer chuyên phát triển React, TypeScript, NestJS, PostgreSQL và Google Apps Script.
+- Senior UI/UX Designer chuyên thiết kế ứng dụng quản trị doanh nghiệp.
+- Senior QA Engineer chuyên kiểm thử hệ thống tính công và dữ liệu nhân sự.
+
+Nhiệm vụ của bạn là phân tích, thiết kế, lập trình, kiểm thử và hoàn thiện ứng dụng quản lý chấm công nội bộ cho Công ty TNHH In Nhật Hàn.
+
+**Yêu cầu bắt buộc:**
+1. Không tự suy diễn các quy tắc tính công chưa được cung cấp.
+2. Không thay đổi các quy tắc nghiệp vụ đã được xác nhận.
+3. Không tự ý làm tròn, cắt giờ công hoặc cộng thêm thời gian.
+4. Không tự động sửa dữ liệu chấm công gốc.
+5. Không được báo hoàn thành khi chưa có bằng chứng kiểm thử.
+6. Khi phát hiện yêu cầu mâu thuẫn hoặc chưa rõ, phải đưa vào danh sách câu hỏi cần xác nhận.
+7. Ưu tiên tính chính xác, bảo mật, khả năng kiểm toán và trải nghiệm người dùng.
+
+---
+
+# 2. MỤC TIÊU DỰ ÁN
+
+Xây dựng ứng dụng web giúp bộ phận nhân sự quản lý bảng công cho khoảng 300 nhân viên, có khả năng mở rộng lên 500–1.000 nhân viên.
+
+Hiện trạng:
+
+- Hằng tháng nhân sự xuất dữ liệu chấm công từ phần mềm máy chấm công ra Excel.
+- Tính lại giờ công, tăng ca, đi muộn, về sớm.
+- Tạo bảng công riêng cho từng nhân viên.
+- Gửi bảng công cho từng người kiểm tra.
+- Tiếp nhận phản hồi và chỉnh sửa.
+- Tổng hợp, xác nhận và chốt công cuối tháng.
+
+Hệ thống mới phải tự động hóa toàn bộ quy trình:
+
+**Import Excel → Chuẩn hóa dữ liệu → Tính công → Phát hiện ngoại lệ → HR kiểm tra → Chốt công → Phát hành bảng công → Nhân viên xác nhận.**
+
+## 3. CÔNG NGHỆ ĐỀ XUẤT
+
+Ưu tiên xây dựng ứng dụng web nội bộ bằng:
+
+- Frontend: React + TypeScript + Tailwind CSS.
+- Backend: NestJS + TypeScript.
+- Database: PostgreSQL.
+- ORM: Prisma.
+- Import/Export Excel: thư viện xử lý XLSX phù hợp.
+- Xuất phiếu công: PDF.
+- Authentication: đăng nhập bằng tài khoản nội bộ.
+- Deployment: Docker Compose, có thể triển khai trên server công ty.
+
+Nếu đánh giá Google Apps Script + Google Sheets phù hợp hơn cho MVP, hãy lập bảng so sánh và đề xuất trước khi thay đổi kiến trúc.
+
+Không tự động triển khai lên môi trường production.
+
+---
+
+# 4. DỮ LIỆU ĐẦU VÀO
+
+Sử dụng file SX.xlsx do người dùng cung cấp.
+
+Chỉ sử dụng những trường nghiệp vụ sau:
+
+1. Mã nhân viên.
+2. Tên nhân viên.
+3. Phòng ban.
+4. Ngày chấm công.
+5. Giờ vào.
+6. Giờ ra.
+7. Tên ca.
+
+Các cột Công, Giờ, TC1, TC2, TC3, Ký hiệu, Vào trễ, Ra sớm trong file gốc không được dùng để tính kết quả.
+
+Hệ thống phải tự tính lại từ dữ liệu nguồn.
+
+Yêu cầu:
+
+- Đọc Excel và nhận diện chính xác tên cột.
+- Hỗ trợ nhiều nhân viên.
+- Hỗ trợ dữ liệu nhiều tháng.
+- Phát hiện dữ liệu trùng.
+- Kiểm tra kiểu dữ liệu ngày giờ.
+- Xử lý ca làm việc qua ngày hôm sau.
+- Không tự gán ca nếu không xác định được tên ca.
+- Lưu lịch sử import.
+- Cho phép xem lại file nguồn.
+- Có chức năng xem trước dữ liệu trước khi xác nhận import.
+- Khi import lại cùng tháng phải có cơ chế chống trùng và kiểm soát phiên bản.
+
+Nếu file chỉ chứa giờ mà không chứa ngày ra, việc xác định ngày ra của ca đêm phải theo quy tắc được kiểm chứng, không được tự ý cộng một ngày trong mọi trường hợp.
+
+---
+
+# 5. QUY TẮC TÍNH CÔNG CHÍNH THỨC
+
+## 5.1. CA 1 – CA NGÀY
+
+Mốc bắt đầu: 08:00.
+
+Mốc đủ 8 giờ công: 17:00.
+
+Thời gian nghỉ ăn: 12:00–13:00.
+
+Quy tắc:
+
+- 8 giờ làm việc đầu tiên: 100%.
+- Thời gian làm việc vượt 8 giờ: 150%.
+- Nghỉ ăn không được tính công.
+- Chỉ trừ phần thời gian làm việc thực tế giao với khung nghỉ.
+
+Công thức:
+
+Tổng giờ hiện diện = Giờ ra - Giờ vào.
+
+Giờ nghỉ = Phần giao giữa thời gian hiện diện và 12:00–13:00.
+
+Giờ tính công = Tổng giờ hiện diện - Giờ nghỉ.
+
+Giờ 100% = MIN(Giờ tính công, 8).
+
+Giờ 150% = MAX(Giờ tính công - 8, 0).
+
+### Ví dụ 1
+
+Vào: 08:00.
+
+Ra: 17:00.
+
+Hiện diện: 9 giờ.
+
+Nghỉ ăn: 1 giờ.
+
+Giờ tính công: 8 giờ.
+
+Kết quả:
+
+- 100% = 8 giờ.
+- 150% = 0 giờ.
+- Đi muộn = 0.
+- Về sớm = 0.
+
+### Ví dụ 2
+
+Vào: 08:30.
+
+Ra: 18:00.
+
+Hiện diện: 9 giờ 30 phút.
+
+Nghỉ ăn: 1 giờ.
+
+Giờ tính công: 8 giờ 30 phút.
+
+Kết quả:
+
+- 100% = 8 giờ.
+- 150% = 30 phút.
+- Đi muộn = 30 phút.
+- Về sớm = 0.
+
+## 5.2. CA 3 – CA ĐÊM
+
+Mốc bắt đầu: 22:00.
+
+Mốc đủ 8 giờ công: 07:00 ngày hôm sau.
+
+Thời gian nghỉ ăn: 00:00–01:00.
+
+Quy tắc:
+
+- 4 giờ làm việc đầu tiên: 100%.
+- 4 giờ làm việc tiếp theo: 130%.
+- Thời gian vượt 8 giờ: 210%.
+- Chỉ trừ phần thời gian thực tế giao với khung nghỉ.
+
+Công thức:
+
+Giờ 100% = MIN(Giờ tính công, 4).
+
+Giờ 130% = MIN(MAX(Giờ tính công - 4, 0), 4).
+
+Giờ 210% = MAX(Giờ tính công - 8, 0).
+
+### Ví dụ 1
+
+Vào: 22:00.
+
+Ra: 07:00 hôm sau.
+
+Hiện diện: 9 giờ.
+
+Nghỉ ăn: 1 giờ.
+
+Giờ tính công: 8 giờ.
+
+Kết quả:
+
+- 100% = 4 giờ.
+- 130% = 4 giờ.
+- 210% = 0 giờ.
+
+### Ví dụ 2
+
+Vào: 22:00.
+
+Ra: 09:00 hôm sau.
+
+Hiện diện: 11 giờ.
+
+Nghỉ ăn: 1 giờ.
+
+Giờ tính công: 10 giờ.
+
+Kết quả:
+
+- 100% = 4 giờ.
+- 130% = 4 giờ.
+- 210% = 2 giờ.
+
+---
+
+# 6. QUY TẮC ĐI MUỘN – VỀ SỚM
+
+Hai chỉ tiêu này phải được tính độc lập.
+
+## Ca 1
+
+Đi muộn:
+
+- Giờ vào sau 08:00.
+- Số phút đi muộn = Giờ vào - 08:00.
+- Nếu đến trước hoặc đúng 08:00 thì bằng 0.
+
+Về sớm:
+
+- Lấy khoảng từ 08:00 đến giờ ra thực tế.
+- Trừ phần giao với giờ nghỉ 12:00–13:00.
+- Nếu kết quả chưa đủ 8 giờ thì phần thiếu là số phút về sớm.
+- Không lấy giờ vào thực tế để tính về sớm.
+
+Ví dụ: vào 08:30, ra 17:00.
+
+Đi muộn = 30 phút.
+
+Về sớm = 0 phút.
+
+## Ca 3
+
+Đi muộn:
+
+- Giờ vào sau 22:00.
+- Số phút đi muộn = Giờ vào - 22:00.
+
+Về sớm:
+
+- Lấy khoảng từ 22:00 đến giờ ra thực tế ngày hôm sau.
+- Trừ phần giao với giờ nghỉ 00:00–01:00.
+- Nếu chưa đủ 8 giờ thì phần thiếu là thời gian về sớm.
+- Không lấy giờ vào thực tế để tính về sớm.
+
+Ví dụ: vào 22:15, ra 06:30.
+
+Đi muộn = 15 phút.
+
+Về sớm = 30 phút.
+
+Tất cả phép tính phải sử dụng phút hoặc giây làm đơn vị nội bộ, không sử dụng số thực để cộng trừ thời gian.
+
+---
+
+# 7. QUẢN LÝ NGOẠI LỆ
+
+Hệ thống phải tự phát hiện:
+
+- Có giờ vào nhưng thiếu giờ ra.
+- Có giờ ra nhưng thiếu giờ vào.
+- Không xác định được ca.
+- Giờ vào/ra không hợp lệ.
+- Dữ liệu trùng.
+- Khoảng thời gian làm việc bất thường.
+- Nhiều dòng chấm công cùng một nhân viên/ngày.
+- Ca đêm có dữ liệu không đủ để xác định ngày ra.
+
+Trạng thái:
+
+- VALID.
+- NO_ATTENDANCE.
+- MISSING_CHECKIN.
+- MISSING_CHECKOUT.
+- INVALID_SHIFT.
+- DUPLICATE.
+- NEEDS_REVIEW.
+- RESOLVED.
+
+Các ngưỡng bất thường phải cấu hình được.
+
+Không được tự động chốt những dòng có ngoại lệ chưa xử lý.
+
+---
+
+# 8. CHỨC NĂNG PHẦN MỀM
+
+## Module 1 – Dashboard HR
+
+Hiển thị:
+
+- Tổng nhân viên.
+- Tổng dòng chấm công.
+- Số nhân viên đã tính công.
+- Số ngoại lệ.
+- Số bảng công đã chốt.
+- Số nhân viên đã xem bảng công.
+- Số phản hồi chưa xử lý.
+
+Có bộ lọc tháng, năm, phòng ban, nhân viên và trạng thái.
+
+## Module 2 – Import Excel
+
+- Upload file.
+- Xem trước dữ liệu.
+- Kiểm tra lỗi.
+- Xác nhận import.
+- Xem lịch sử import.
+- Tải lại file nguồn.
+
+## Module 3 – Bảng công tổng hợp
+
+Bảng dữ liệu:
+
+Mã NV | Họ tên | Phòng ban | Ca | Ngày | Vào | Ra | Giờ tính công | Đi muộn | Về sớm | 100% | 130% | 150% | 210% | Trạng thái.
+
+Có tìm kiếm, lọc, phân trang, xuất Excel.
+
+## Module 4 – Chi tiết bảng công nhân viên
+
+Hiển thị toàn bộ ngày trong tháng, kể cả ngày không có chấm công.
+
+Cuối bảng tổng hợp:
+
+- Tổng giờ 100%.
+- Tổng giờ 130%.
+- Tổng giờ 150%.
+- Tổng giờ 210%.
+- Tổng số phút đi muộn.
+- Tổng số lần đi muộn.
+- Tổng số phút về sớm.
+- Tổng số lần về sớm.
+
+Cho phép xuất PDF theo mẫu bảng công hiện tại.
+
+## Module 5 – Xử lý ngoại lệ
+
+HR có thể:
+
+- Xem dữ liệu gốc.
+- Nhập dữ liệu điều chỉnh.
+- Ghi lý do điều chỉnh.
+- Lưu người thực hiện và thời gian.
+- Tính lại kết quả.
+- Xem lịch sử trước và sau điều chỉnh.
+
+Không ghi đè dữ liệu gốc.
+
+## Module 6 – Chốt công
+
+Quy trình:
+
+DRAFT → REVIEWED → APPROVED → LOCKED → PUBLISHED.
+
+Khi LOCKED, dữ liệu không được sửa trực tiếp.
+
+Nếu cần điều chỉnh sau chốt, phải thực hiện quy trình mở khóa hoặc tạo phiên bản điều chỉnh có lịch sử kiểm toán.
+
+## Module 7 – Phát hành bảng công
+
+- Xuất PDF từng nhân viên.
+- Xuất PDF hàng loạt.
+- Xuất Excel tổng hợp.
+- Cho phép nhân viên đăng nhập để xem bảng công của mình.
+- Theo dõi đã xem/chưa xem.
+- Cho phép nhân viên xác nhận hoặc gửi yêu cầu điều chỉnh.
+
+Không gửi bảng công hàng loạt cho nhân viên thật trong môi trường thử nghiệm.
+
+## Module 8 – Quản lý người dùng
+
+Phân quyền:
+
+ADMIN: Quản trị hệ thống.
+
+HR: Import, xử lý, tính công và chốt theo quyền.
+
+MANAGER: Xem nhân viên thuộc phạm vi quản lý.
+
+EMPLOYEE: Chỉ xem và phản hồi bảng công của chính mình.
+
+Không sử dụng mã nhân viên đơn thuần làm phương thức xác thực.
+
+---
+
+# 9. YÊU CẦU UI/UX
+
+Thiết kế giao diện tiếng Việt, hiện đại, chuyên nghiệp, phù hợp môi trường doanh nghiệp sản xuất.
+
+Phong cách:
+
+- Clean Enterprise SaaS.
+- Sidebar bên trái.
+- Header phía trên.
+- Dashboard dạng KPI cards.
+- Bảng dữ liệu dễ đọc.
+- Bộ lọc rõ ràng.
+- Màu cảnh báo ngoại lệ dễ nhận biết.
+- Responsive trên desktop, tablet và điện thoại.
+
+Các màn hình bắt buộc:
+
+1. Đăng nhập.
+2. Dashboard tổng quan.
+3. Import Excel.
+4. Danh sách nhân viên.
+5. Bảng công tổng hợp.
+6. Chi tiết bảng công nhân viên.
+7. Xử lý ngoại lệ.
+8. Phê duyệt và chốt công.
+9. Phát hành bảng công.
+10. Nhân viên xem và xác nhận.
+11. Cấu hình ca.
+12. Lịch sử điều chỉnh.
+
+Không chỉ dựng giao diện tĩnh. Các chức năng chính phải hoạt động với backend và dữ liệu thực tế.
+
+---
+
+# 10. YÊU CẦU DATABASE
+
+Thiết kế tối thiểu các bảng:
+
+- employees
+- departments
+- users
+- roles
+- shifts
+- shift_rules
+- attendance_imports
+- attendance_raw
+- attendance_adjustments
+- attendance_calculations
+- attendance_exceptions
+- attendance_periods
+- attendance_approvals
+- timesheets
+- timesheet_publications
+- employee_feedback
+- audit_logs
+
+Yêu cầu:
+
+- Có khóa ngoại.
+- Có migration.
+- Có index phù hợp.
+- Có ràng buộc dữ liệu.
+- Có kiểm soát trùng.
+- Có lịch sử thay đổi.
+- Lưu thời gian theo múi giờ Asia/Ho_Chi_Minh.
+- Phân quyền dữ liệu ở backend.
+- Bảo vệ thông tin cá nhân và bảng công.
+
+---
+
+# 11. KIỂM THỬ BẮT BUỘC
+
+Xây dựng bộ unit test cho engine tính công.
+
+Tối thiểu kiểm thử:
+
+1. Ca 1 đủ 8 giờ.
+2. Ca 1 đi muộn.
+3. Ca 1 về sớm.
+4. Ca 1 tăng ca.
+5. Ca 1 chỉ làm trước giờ nghỉ.
+6. Ca 1 làm xuyên một phần giờ nghỉ.
+7. Ca 3 đủ 8 giờ.
+8. Ca 3 đi muộn.
+9. Ca 3 về sớm.
+10. Ca 3 tăng ca.
+11. Ca 3 qua ngày hôm sau.
+12. Ca 3 đi qua một phần giờ nghỉ.
+13. Thiếu giờ vào.
+14. Thiếu giờ ra.
+15. Tên ca không hợp lệ.
+16. Dữ liệu trùng.
+17. Thời gian không hợp lệ.
+18. Nhân viên không có chấm công.
+19. Import lại file.
+20. Chỉnh sửa và tính lại.
+21. Kiểm tra tổng giờ các mức bằng tổng giờ tính công.
+22. Kiểm tra nhân viên không xem được bảng công của người khác.
+23. Kiểm tra không sửa trực tiếp kỳ công đã khóa.
+24. Kiểm tra lịch sử điều chỉnh.
+25. Kiểm tra xuất PDF và đối chiếu tổng công.
+
+Chạy kiểm thử bằng dữ liệu mẫu và dữ liệu thực tế đã ẩn thông tin cá nhân khi cần.
+
+Không được tự báo PASS nếu chưa chạy test.
+
+---
+
+# 12. QUY TRÌNH TRIỂN KHAI
+
+Thực hiện theo từng giai đoạn.
+
+### PHASE 0 – Phân tích dữ liệu
+
+- Đọc file SX.xlsx.
+- Kiểm tra cấu trúc.
+- Kiểm tra các định dạng ngày giờ.
+- Thống kê dữ liệu bất thường.
+- Đọc code Phase 1 đã có.
+- Đối chiếu đặc tả nghiệp vụ.
+- Liệt kê những điểm chưa rõ.
+
+Đầu ra: báo cáo phân tích và danh sách câu hỏi.
+
+### PHASE 1 – Attendance Engine
+
+- Xây dựng thuật toán tính công.
+- Xây dựng unit test.
+- Chạy trên dữ liệu mẫu.
+- Chạy đối chiếu với SX.xlsx.
+- Xuất bảng công và bảng ngoại lệ.
+
+Chỉ hoàn thành khi các trường hợp đã có kỳ vọng xác nhận đều kiểm thử đạt.
+
+### PHASE 2 – Backend & Database
+
+- Thiết kế Prisma schema.
+- Migration.
+- API nhân viên.
+- API import.
+- API tính công.
+- API ngoại lệ.
+- API bảng công.
+- Authentication và authorization.
+
+### PHASE 3 – Frontend HR
+
+- Dashboard.
+- Import Excel.
+- Bảng công.
+- Chi tiết nhân viên.
+- Ngoại lệ.
+- Bộ lọc.
+- Cấu hình.
+
+### PHASE 4 – Chốt và phát hành
+
+- Workflow phê duyệt.
+- Khóa kỳ công.
+- Xuất PDF.
+- Portal nhân viên.
+- Phản hồi.
+- Audit log.
+
+### PHASE 5 – Kiểm thử và nghiệm thu
+
+- Unit test.
+- Integration test.
+- E2E test.
+- Kiểm thử phân quyền.
+- Kiểm thử import 300–1.000 nhân viên.
+- Kiểm thử phát hành hàng loạt.
+- Kiểm thử backup/restore.
+- UAT với HR.
+
+---
+
+# 13. TÀI LIỆU BẮT BUỘC
+
+Tạo thư mục docs gồm:
+
+- 01_BUSINESS_REQUIREMENTS.md
+- 02_ATTENDANCE_RULES.md
+- 03_SYSTEM_ARCHITECTURE.md
+- 04_DATABASE_DESIGN.md
+- 05_API_SPECIFICATION.md
+- 06_UI_UX_SPECIFICATION.md
+- 07_WORKFLOW.md
+- 08_TEST_CASES.md
+- 09_UAT_CHECKLIST.md
+- 10_DEPLOYMENT_GUIDE.md
+- 11_SECURITY_AND_AUDIT.md
+- 12_OPEN_QUESTIONS.md
+- 13_PROGRESS_REPORT.md
+
+Tạo AGENTS.md ở thư mục gốc, quy định cách AI tiếp tục làm việc, kiểm thử và báo cáo.
+
+---
+
+# 14. NGUYÊN TẮC LÀM VIỆC
+
+Không lập trình toàn bộ hệ thống trong một lần.
+
+Trước tiên:
+
+1. Kiểm tra repository hiện tại.
+2. Đọc toàn bộ file đính kèm.
+3. Xác định phần đã hoàn thành.
+4. Không ghi đè code có sẵn khi chưa đánh giá.
+5. Lập kế hoạch triển khai.
+6. Phân tích rủi ro.
+7. Xây dựng danh sách công việc theo thứ tự ưu tiên.
+8. Báo cáo những nghiệp vụ chưa đủ thông tin.
+9. Chỉ triển khai Phase tiếp theo khi các điều kiện đầu vào đã sẵn sàng.
+
+Sau mỗi Phase phải báo cáo:
+
+- Công việc đã hoàn thành.
+- File đã tạo hoặc sửa.
+- Kiểm thử đã chạy.
+- Kết quả PASS/FAIL.
+- Lỗi tồn đọng.
+- Rủi ro.
+- Công việc tiếp theo.
+- Điều kiện nghiệm thu.
+
+Không sử dụng dữ liệu giả để báo cáo kết quả kiểm thử thực tế.
+
+---
+
+# 15. YÊU CẦU THỰC HIỆN NGAY
+
+Bắt đầu từ **PHASE 0 – AUDIT & PLANNING**.
+
+Hãy đọc file SX.xlsx, tài liệu đặc tả và code Phase 1 nếu được cung cấp.
+
+Sau đó thực hiện:
+
+1. Phân tích dữ liệu đầu vào.
+2. Đánh giá tính khả thi.
+3. Kiểm tra các quy tắc nghiệp vụ.
+4. Đối chiếu các trường hợp kiểm thử.
+5. Đề xuất kiến trúc phần mềm.
+6. Thiết kế database sơ bộ.
+7. Thiết kế workflow tổng thể.
+8. Lập kế hoạch phát triển chi tiết.
+9. Xác định tiêu chí nghiệm thu từng Phase.
+10. Tạo tài liệu và AGENTS.md.
+
+**Không tự động triển khai production, không gửi dữ liệu cho nhân viên thật và không tuyên bố Phase 0 hoàn tất khi chưa kiểm tra đủ đầu vào.**
+
+Khi hoàn thành Phase 0, hãy dừng và báo cáo để tôi xem xét trước khi triển khai Phase 1.
