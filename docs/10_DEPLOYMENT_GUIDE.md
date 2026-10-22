@@ -1,26 +1,74 @@
-# 10 – Hướng dẫn triển khai dự kiến
-Trạng thái: kế hoạch; chưa có ứng dụng/Dockerfile/Compose/migration và chưa chạy server.
+# 10 – Hướng dẫn triển khai local/staging
 
-## Môi trường
-Local/dev và staging tách DB/storage/accounts với production. Không dùng nhân viên thật để gửi hàng loạt thử nghiệm.
-Docker Compose dự kiến gồm web/reverse proxy, api, worker và PostgreSQL; tệp nguồn/PDF dùng volume private.
-Pin dependency/container versions sau lựa chọn thư viện và kiểm thử; không dùng tag latest cho bản nghiệm thu.
-Secrets nằm ngoài Git, có mẫu biến môi trường không chứa khóa thật; timezone nghiệp vụ Asia/Ho_Chi_Minh.
-DB không mở cổng ra mạng công cộng; API nội bộ qua TLS, health check không lộ dữ liệu.
+Trạng thái: Docker Compose đã build/chạy cục bộ; hướng dẫn này không cho phép production deployment. Xem cổng readiness tại `DEPLOYMENT_READINESS.md`.
 
-## Runbook sẽ hoàn thiện ở Phase2–5
-1. Kiểm tra server, dung lượng/CPU/RAM và chính sách truy cập.
-2. Tạo secrets, DB user quyền tối thiểu, volumes và backup schedule.
-3. Chạy migration trên DB thử nghiệm; kiểm tra constraints và phục hồi trước khi áp dụng môi trường khác.
-4. Tạo tài khoản admin bằng quy trình bảo mật, không mật khẩu mặc định.
-5. Chạy unit/integration/E2E, upload XLSX ẩn danh, đối chiếu tổng và PDF.
-6. Benchmark import/calculate/export, đo CPU/RAM/thời gian; SLA chờ HR/IT xác nhận.
-7. Kiểm tra job retry, downtime, audit, lock/concurrency.
-8. Nếu được yêu cầu production sau này: backup, phê duyệt phiên bản, rollout/rollback riêng; không tự triển khai.
+## Yêu cầu
+
+- Windows + PowerShell, Docker Desktop.
+- Node.js `22.17.0`, pnpm `9.15.9` nếu chạy/test ngoài container.
+- Ít nhất 4 GB RAM trống cho stack development.
+
+## Chuẩn bị cấu hình
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Thay mọi giá trị `replace-*`; JWT secret tối thiểu 32 ký tự, seed password tối thiểu 14 ký tự. Không commit `.env`. Giữ:
+
+```text
+WORKFLOW_ENABLED=false
+DUPLICATE_KEY_FIELDS=employeeCode,attendanceDate,shiftName
+SOURCE_MASTER_PROVISIONING_ENABLED=false
+```
+
+Giữ workflow tắt cho tới khi Q10/Q11 được duyệt. Không thay đổi khóa trùng đã được duyệt ngày 22/10/2026 nếu chưa có quyết định nghiệp vụ mới.
+
+## Chạy bằng Docker Compose
+
+```powershell
+docker compose config --quiet
+docker compose up -d --build
+docker compose ps
+```
+
+API container tự chạy `prisma migrate deploy`. Seed không tự chạy để tránh tạo account ngoài ý muốn. Với development, cấu hình sáu biến `SEED_*` rồi chạy `pnpm.cmd db:seed` từ host hoặc command one-off được kiểm soát.
+
+URL mặc định:
+
+- Web/Nginx: `http://127.0.0.1:8080`
+- API: `http://127.0.0.1:3000/api/v1`
+- Swagger: `http://127.0.0.1:3000/api/docs`
+- Health API: `http://127.0.0.1:3000/api/v1/health`
+- Health Nginx: `http://127.0.0.1:8080/healthz`
+
+Nếu cổng bận, đặt `COMPOSE_API_PORT`, `COMPOSE_WEB_PORT`, `POSTGRES_HOST_PORT` trong `.env`.
+
+## Kiểm tra sau khởi động
+
+1. Cả `db`, `api`, `web` ở trạng thái healthy.
+2. Health API trực tiếp và qua `/api/` của Nginx trả `status=ok`.
+3. Login synthetic development hoạt động; request không token trả 401.
+4. EMPLOYEE không xem được ID của nhân viên khác.
+5. Dashboard và 12 route render; preview import hiển thị khóa trùng đã cấu hình và chỉ cho confirm khi không có lỗi blocking.
 
 ## Backup/restore
-Backup DB cùng file source/PDF, manifest hash và revision/rule/engine references.
-Mã hóa, quyền riêng, retention/RPO/RTO cần IT xác nhận.
-Restore vào môi trường cách ly, kiểm tra FK/số bản ghi/hash/tổng kỳ/quyền trước khi kết luận phục hồi đạt.
-Rollback app không đồng nghĩa rollback DB; chuẩn bị migration tương thích và phương án restore có kiểm chứng.
-Không ghi lệnh giả “đã chạy”; hướng dẫn thực thi cụ thể cập nhật khi có code/infrastructure.
+
+```powershell
+powershell -File scripts/backup.ps1 -OutputDirectory D:\backups\tinhcong
+powershell -File scripts/restore.ps1 -BackupFile D:\backups\tinhcong\file.sql -ConfirmRestore
+```
+
+Restore là thao tác phá hủy target DB: phải xác nhận đúng môi trường, kiểm tra hash, thử trên DB cách ly và chạy integrity checks trước.
+
+## Dừng local
+
+```powershell
+docker compose stop
+```
+
+Không dùng `down -v` nếu cần giữ database/volume. Không xóa volume hoặc rollback DB tự động.
+
+## Rollback ứng dụng
+
+Pin image digest/tag đã kiểm chứng, backup trước, quay lại image web/API tương thích schema rồi chạy health/login/scope/report checks. Rollback app không đồng nghĩa rollback migration; DB restore chỉ theo runbook và phê duyệt riêng.

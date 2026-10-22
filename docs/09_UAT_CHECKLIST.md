@@ -1,10 +1,10 @@
 # 09 – Checklist nghiệm thu và kế hoạch Phase
-Tất cả checkbox chưa đánh dấu; chưa có UAT hoặc nghiệm thu.
+Cập nhật 21/10/2026. Tất cả checkbox chưa đánh dấu; chưa có UAT hoặc nghiệm thu. Ba trạng thái engine readiness, real-data readiness và Phase 0 acceptance độc lập.
 
 | Phase | Điều kiện vào | Công việc theo ưu tiên | Điều kiện ra / bằng chứng |
 |---|---|---|---|
-| 0 | đặc tả, SX.xlsx, code hiện có nếu có | P0 audit tệp/ngày/cột; đối chiếu công thức; câu hỏi; P1 thiết kế/kế hoạch | audit đủ đầu vào, HR xác nhận câu hỏi chặn, duyệt ma trận expected, review tài liệu |
-| 1 | Phase0 được xem xét; người dùng cho phép; mapping/ngày ca/chống trùng đủ rõ | engine giây; parser; unit tests; report công/ngoại lệ | ví dụ và expected xác nhận PASS thực; đối chiếu XLSX; source bất biến, tổng mức=W |
+| 0 | đặc tả và quyết định nghiệp vụ; SX.xlsx/code nếu có | audit tài liệu/đầu vào; đối chiếu công thức; câu hỏi; thiết kế/kế hoạch | ghi riêng `READY_FOR_ENGINE_DEVELOPMENT`, `READY_FOR_REAL_DATA_VALIDATION`, `PHASE0_ACCEPTED`; Chủ dự án nghiệm thu rõ ràng |
+| 1 | Phase0 được Chủ dự án xem xét/cho phép; engine core dùng guard fail-closed; tích hợp thực cần mapping/ngày ca; duplicate key đã duyệt | engine giây; parser; unit tests; `BangCong`/`NgoaiLe` | actual/expected PASS thực sau khi chạy; đối chiếu XLSX; source bất biến, tổng mức=W |
 | 2 | engine nghiệm thu, mô hình quyền/kỳ/import xác nhận | schema/migration; auth; import; calculation; correction; API | integration DB thật PASS; quyền/lock/concurrency/idempotency PASS |
 | 3 | API sẵn, hợp đồng/error ổn định | login/dashboard/import/nhân viên/bảng công/ngoại lệ/cấu hình | 12 màn hình theo giai đoạn kết nối backend; filter/page/loading/error hoạt động |
 | 4 | quyền duyệt/reopen và mẫu PDF đã xác nhận | workflow/snapshot; PDF/Excel; publish/portal/feedback/audit | lock đúng, PDF khớp tổng, NV chỉ thấy mình, retry không trùng; không gửi thật |
@@ -16,7 +16,8 @@ Không ấn định thời gian hoàn thành khi chưa audit tệp/code và bi�
 ## HR xác nhận
 - [ ] Cột/định dạng nguồn chính xác; một dòng được truy về sheet/số dòng.
 - [ ] Các ví dụ chính thức và kỳ vọng suy ra được duyệt.
-- [ ] Ngày vào/ra ca đêm, nhiều dòng/ngày, tái import, ngưỡng bất thường đã rõ.
+- [ ] DEC-001–DEC-006 được áp dụng đúng; khóa trùng dùng `employeeCode,attendanceDate,shiftName`; tiêu chí ngày ra còn OPEN xử lý fail-closed, không tự mặc định.
+- [ ] Import có duplicate bị reject toàn bộ; phân biệt trùng với nhiều dòng; một dòng lưu đủ mọi lỗi.
 - [ ] Dashboard KPI khớp dữ liệu có cùng bộ lọc.
 - [ ] Chi tiết đủ mọi ngày tháng, phân biệt không chấm công và lỗi.
 - [ ] Correction có lý do và giữ raw, audit trước/sau.

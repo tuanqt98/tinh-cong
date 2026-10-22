@@ -1,0 +1,1187 @@
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { basename, join, resolve } from 'node:path';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { calculateAttendance } from '@tinh-cong/attendance-engine';
+import { CalculationStatus, Prisma } from '../generated/prisma/index.js';
+import type { AuthenticatedUser } from '../auth/types.js';
+import { PrismaService } from '../prisma/prisma.service.js';
+import type { PaginationDto } from '../core/dto.js';
+import { ExcelParserService } from './excel-parser.service.js';
+import {
+  SOURCE_FIELDS,
+  type ColumnMapping,
+  type ParsedSourceRow,
+  type SourceField,
+  type UploadedWorkbook,
+} from './imports.types.js';
+
+interface PreviewMetadata {
+  mapping: ColumnMapping;
+  sheets: string[];
+  rowCount: number;
+  previewRows: ParsedSourceRow[];
+  duplicateKeyFields: SourceField[];
+  duplicateRuleConfigured: boolean;
+}
+
+type RawRow = Prisma.AttendanceRawGetPayload<Record<string, never>>;
+type ScheduleWithShift = Prisma.WorkScheduleGetPayload<{
+  include: { shift: { include: { rules: true } } };
+}>;
+
+type SupportedShiftCode = 'CA1' | 'CA3';
+
+const APPROVED_IMPORT_SOURCE_TYPE = 'APPROVED_XLSX_IMPORT';
+
+const SHIFT_DEFINITIONS: Record<
+  SupportedShiftCode,
+  {
+    name: string;
+    scheduledStartSeconds: number;
+    scheduledCompletionSeconds: number;
+    breakStartSeconds: number;
+    breakEndSeconds: number;
+    abnormalDurationThresholdSeconds: number;
+    tiers: Prisma.InputJsonObject;
+  }
+> = {
+  CA1: {
+    name: 'Ca 1',
+    scheduledStartSeconds: 28_800,
+    scheduledCompletionSeconds: 61_200,
+    breakStartSeconds: 43_200,
+    breakEndSeconds: 46_800,
+    abnormalDurationThresholdSeconds: 57_600,
+    tiers: { tier100: 28_800, tier150After: 28_800 },
+  },
+  CA3: {
+    name: 'Ca 3',
+    scheduledStartSeconds: 79_200,
+    scheduledCompletionSeconds: 111_600,
+    breakStartSeconds: 86_400,
+    breakEndSeconds: 90_000,
+    abnormalDurationThresholdSeconds: 57_600,
+    tiers: { tier100: 14_400, tier130: 14_400, tier210After: 28_800 },
+  },
+};
+
+@Injectable()
+export class ImportsService {
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(ConfigService) private readonly config: ConfigService,
+    @Inject(ExcelParserService) private readonly parser: ExcelParserService,
+  ) {}
+
+  async preview(file: UploadedWorkbook | undefined, mappingText: string, user: AuthenticatedUser) {
+    this.assertWorkbook(file);
+    const mapping = this.parser.parseMapping(mappingText);
+    const parsed = await this.parser.parse(file.buffer, mapping);
+    const duplicateKeyFields = this.duplicateKeyFields();
+    const duplicateRuleConfigured = duplicateKeyFields.length > 0;
+    const sha256 = createHash('sha256').update(file.buffer).digest('hex');
+    const storageKey = await this.storeSource(file.buffer);
+
+    const importRecord = await this.prisma.attendanceImport.create({
+      data: {
+        originalName: basename(file.originalname),
+        storageKey,
+        sha256,
+        mappingVersion: 'manual-v1',
+        attemptedById: user.id,
+        metadata: {
+          mapping,
+          sheets: parsed.sheets,
+          rowCount: parsed.rows.length,
+          previewRows: parsed.rows.slice(0, 100),
+          duplicateKeyFields,
+          duplicateRuleConfigured,
+        } as unknown as Prisma.InputJsonValue,
+        issues: {
+          create: parsed.issues.map((issue) => ({
+            sheet: issue.sheet,
+            rowNo: issue.rowNo,
+            issueCode: issue.code,
+            evidence: issue as unknown as Prisma.InputJsonValue,
+          })),
+        },
+      },
+    });
+
+    return {
+      id: importRecord.id,
+      status: importRecord.status,
+      sha256,
+      sheets: parsed.sheets,
+      rowCount: parsed.rows.length,
+      previewRows: parsed.rows.slice(0, 100),
+      issues: parsed.issues,
+      duplicateRuleConfigured,
+      canConfirm: !parsed.issues.some((issue) => issue.blocking) && duplicateRuleConfigured,
+    };
+  }
+
+  async confirm(id: string, user: AuthenticatedUser) {
+    const record = await this.prisma.attendanceImport.findUnique({
+      where: { id },
+      include: { issues: true },
+    });
+    if (!record || !record.storageKey) throw new NotFoundException();
+    if (record.attemptedById !== user.id) {
+      throw new ConflictException('Chỉ người tạo preview được confirm trong phiên bản này.');
+    }
+    if (record.status !== 'PREVIEW') {
+      throw new ConflictException({
+        code: 'IMPORT_ALREADY_PROCESSED',
+        message: `Import đã được xử lý với trạng thái ${record.status}.`,
+      });
+    }
+    const duplicateKeyFields = this.duplicateKeyFields();
+    if (!duplicateKeyFields.length) {
+      throw new ConflictException({
+        code: 'DUPLICATE_RULE_UNCONFIGURED',
+        message: 'Chưa cấu hình khóa trùng được HR phê duyệt.',
+      });
+    }
+    if (
+      record.issues.some((issue) => {
+        const evidence = issue.evidence as { blocking?: boolean } | null;
+        return evidence?.blocking === true;
+      })
+    ) {
+      throw new BadRequestException('Preview còn lỗi cấu trúc chặn import.');
+    }
+
+    const metadata = record.metadata as unknown as PreviewMetadata;
+    const parsed = await this.parser.parse(await readFile(record.storageKey), metadata.mapping);
+    const keyedRows = parsed.rows.map((row) => ({
+      row,
+      key: this.duplicateKey(row, duplicateKeyFields),
+    }));
+    const withinFile = new Map<string, ParsedSourceRow[]>();
+    for (const item of keyedRows) {
+      const rows = withinFile.get(item.key) ?? [];
+      rows.push(item.row);
+      withinFile.set(item.key, rows);
+    }
+    const duplicateIssues: Array<{
+      row: ParsedSourceRow;
+      key: string;
+      scope: 'WITHIN_FILE' | 'STORED_DATA';
+    }> = [...withinFile.entries()]
+      .filter(([, rows]) => rows.length > 1)
+      .flatMap(([key, rows]) => rows.map((row) => ({ row, key, scope: 'WITHIN_FILE' as const })));
+    const stored = await this.prisma.attendanceRaw.findMany({
+      where: { sourceIdentityHash: { in: keyedRows.map((item) => item.key) } },
+      select: { sourceIdentityHash: true },
+    });
+    const storedKeys = new Set(
+      stored.flatMap((item) => (item.sourceIdentityHash ? [item.sourceIdentityHash] : [])),
+    );
+    for (const item of keyedRows) {
+      if (storedKeys.has(item.key))
+        duplicateIssues.push({ row: item.row, key: item.key, scope: 'STORED_DATA' });
+    }
+
+    if (duplicateIssues.length) {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.attendanceImportIssue.createMany({
+          data: duplicateIssues.map((issue) => ({
+            importId: id,
+            sheet: issue.row.sheet,
+            rowNo: issue.row.rowNo,
+            issueCode: 'DUPLICATE',
+            matchScope: issue.scope,
+            evidence: { keyHash: issue.key },
+          })),
+        });
+        await tx.attendanceImport.update({
+          where: { id },
+          data: { status: 'REJECTED', rejectionReason: 'DUPLICATE_DETECTED' },
+        });
+        await tx.auditLog.create({
+          data: {
+            actorId: user.id,
+            action: 'IMPORT_REJECTED',
+            entity: 'AttendanceImport',
+            entityId: id,
+            reason: 'DUPLICATE_DETECTED',
+            after: { duplicateCount: duplicateIssues.length },
+          },
+        });
+      });
+      return { id, status: 'REJECTED', duplicateCount: duplicateIssues.length };
+    }
+
+    const accepted = await this.prisma.$transaction(async (tx) => {
+      await tx.attendanceRaw.createMany({
+        data: keyedRows.map(({ row, key }) => ({
+          importId: id,
+          sheet: row.sheet,
+          rowNo: row.rowNo,
+          employeeCode: row.employeeCode ?? '',
+          employeeName: row.employeeName ?? '',
+          departmentName: row.departmentName ?? '',
+          attendanceDateRaw: row.attendanceDate,
+          checkInRaw: row.checkIn,
+          checkOutRaw: row.checkOut,
+          shiftNameRaw: row.shiftName,
+          rawCells: row.rawCells,
+          sourceIdentityHash: key,
+        })),
+      });
+      await tx.attendanceImport.update({
+        where: { id },
+        data: { status: 'ACCEPTED', confirmedAt: new Date() },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: user.id,
+          action: 'IMPORT_CONFIRMED',
+          entity: 'AttendanceImport',
+          entityId: id,
+          after: { rowCount: keyedRows.length },
+        },
+      });
+      return { id, status: 'ACCEPTED', rowCount: keyedRows.length };
+    });
+    try {
+      return { ...accepted, processing: await this.process(id, user) };
+    } catch (error) {
+      await this.prisma.auditLog.create({
+        data: {
+          actorId: user.id,
+          action: 'IMPORT_PROCESSING_FAILED',
+          entity: 'AttendanceImport',
+          entityId: id,
+          reason:
+            error instanceof Error ? error.message.slice(0, 1000) : 'UNKNOWN_PROCESSING_ERROR',
+        },
+      });
+      return { ...accepted, processing: { status: 'FAILED' as const } };
+    }
+  }
+
+  async list(query: PaginationDto) {
+    const where: Prisma.AttendanceImportWhereInput = query.search
+      ? { originalName: { contains: query.search, mode: 'insensitive' } }
+      : {};
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.attendanceImport.findMany({
+        where,
+        orderBy: { attemptedAt: 'desc' },
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+        include: { _count: { select: { issues: true, rawRows: true } } },
+      }),
+      this.prisma.attendanceImport.count({ where }),
+    ]);
+    return { items, total, page: query.page, pageSize: query.pageSize };
+  }
+
+  async detail(id: string) {
+    const record = await this.prisma.attendanceImport.findUnique({
+      where: { id },
+      include: {
+        issues: { orderBy: [{ rowNo: 'asc' }, { issueCode: 'asc' }] },
+        _count: { select: { issues: true, rawRows: true } },
+      },
+    });
+    if (!record) throw new NotFoundException();
+    const [linkedRows, normalizedRows, calculatedRows, exceptions] = await Promise.all([
+      this.prisma.attendanceRaw.count({ where: { importId: id, employeeId: { not: null } } }),
+      this.prisma.attendanceNormalization.count({ where: { raw: { importId: id } } }),
+      this.prisma.attendanceCalculation.count({ where: { raw: { importId: id } } }),
+      this.prisma.attendanceException.count({ where: { raw: { importId: id } } }),
+    ]);
+    return { ...record, processing: { linkedRows, normalizedRows, calculatedRows, exceptions } };
+  }
+
+  async rows(id: string, query: PaginationDto) {
+    const exists = await this.prisma.attendanceImport.count({ where: { id } });
+    if (!exists) throw new NotFoundException();
+    const where: Prisma.AttendanceRawWhereInput = {
+      importId: id,
+      ...(query.search
+        ? {
+            OR: [
+              { employeeCode: { contains: query.search, mode: 'insensitive' } },
+              { employeeName: { contains: query.search, mode: 'insensitive' } },
+              { departmentName: { contains: query.search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.attendanceRaw.findMany({
+        where,
+        orderBy: [{ sheet: 'asc' }, { rowNo: 'asc' }],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+        select: {
+          id: true,
+          sheet: true,
+          rowNo: true,
+          employeeId: true,
+          employeeCode: true,
+          employeeName: true,
+          departmentName: true,
+          attendanceDateRaw: true,
+          checkInRaw: true,
+          checkOutRaw: true,
+          shiftNameRaw: true,
+          _count: { select: { exceptions: true, calculations: true } },
+        },
+      }),
+      this.prisma.attendanceRaw.count({ where }),
+    ]);
+    return { items, total, page: query.page, pageSize: query.pageSize };
+  }
+
+  async process(id: string, user: AuthenticatedUser) {
+    const record = await this.prisma.attendanceImport.findUnique({
+      where: { id },
+      include: { rawRows: true, issues: true },
+    });
+    if (!record) throw new NotFoundException();
+    if (record.status !== 'ACCEPTED') {
+      throw new ConflictException('Chỉ xử lý import đã ACCEPTED.');
+    }
+
+    const employeeCodes = [...new Set(record.rawRows.map((row) => row.employeeCode))];
+    const employees = await this.prisma.employee.findMany({
+      where: { code: { in: employeeCodes }, active: true },
+      select: { id: true, code: true },
+    });
+    const employeeByCode = new Map(employees.map((employee) => [employee.code, employee.id]));
+
+    await this.prisma.$transaction(
+      employees.map((employee) =>
+        this.prisma.attendanceRaw.updateMany({
+          where: { importId: id, employeeCode: employee.code, employeeId: null },
+          data: { employeeId: employee.id },
+        }),
+      ),
+    );
+
+    const rawBySource = new Map(
+      record.rawRows.map((row) => [`${row.sheet}\u0000${row.rowNo}`, row]),
+    );
+    const existing = await this.prisma.attendanceException.findMany({
+      where: {
+        OR: [
+          { rawId: { in: record.rawRows.map((row) => row.id) } },
+          { importIssueId: { in: record.issues.map((issue) => issue.id) } },
+        ],
+      },
+      select: { rawId: true, importIssueId: true, code: true },
+    });
+    const existingKeys = new Set(
+      existing.flatMap((item) => [
+        ...(item.importIssueId ? [`issue:${item.importIssueId}`] : []),
+        ...(item.rawId ? [`raw:${item.rawId}:${item.code}`] : []),
+      ]),
+    );
+    const exceptionData: Prisma.AttendanceExceptionCreateManyInput[] = [];
+
+    for (const issue of record.issues) {
+      if (existingKeys.has(`issue:${issue.id}`)) continue;
+      const raw = rawBySource.get(`${issue.sheet}\u0000${issue.rowNo}`);
+      const evidence = issue.evidence as { blocking?: boolean } | null;
+      exceptionData.push({
+        ...(raw ? { rawId: raw.id } : {}),
+        importIssueId: issue.id,
+        code: issue.issueCode,
+        blocking: evidence?.blocking ?? false,
+        ...(issue.evidence ? { details: issue.evidence as Prisma.InputJsonValue } : {}),
+      });
+      existingKeys.add(`issue:${issue.id}`);
+    }
+
+    const linkedRows: Array<RawRow & { employeeId: string }> = [];
+    let missingEmployees = 0;
+    for (const raw of record.rawRows) {
+      const employeeId = employeeByCode.get(raw.employeeCode);
+      if (!employeeId) {
+        const key = `raw:${raw.id}:EMPLOYEE_NOT_FOUND`;
+        if (!existingKeys.has(key)) {
+          exceptionData.push({
+            rawId: raw.id,
+            code: 'EMPLOYEE_NOT_FOUND',
+            blocking: true,
+            details: { employeeCode: raw.employeeCode },
+          });
+          existingKeys.add(key);
+        }
+        missingEmployees++;
+      } else {
+        linkedRows.push({ ...raw, employeeId });
+      }
+    }
+    if (exceptionData.length) {
+      await this.prisma.attendanceException.createMany({ data: exceptionData });
+    }
+
+    await this.resolveRecoveredExceptions(
+      user.id,
+      new Map([['EMPLOYEE_NOT_FOUND', new Set(linkedRows.map((row) => row.id))]]),
+    );
+
+    const calculationSummary = await this.processLinkedRows(linkedRows, existingKeys, user.id);
+    const summary = {
+      rawRows: record.rawRows.length,
+      linkedEmployees: linkedRows.length,
+      missingEmployees,
+      promotedImportIssues: record.issues.length,
+      ...calculationSummary,
+    };
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: user.id,
+        action: 'IMPORT_PROCESSED',
+        entity: 'AttendanceImport',
+        entityId: id,
+        after: summary,
+      },
+    });
+    return summary;
+  }
+
+  async approveSourceAndProcess(id: string, user: AuthenticatedUser) {
+    if (this.config.get<string>('SOURCE_MASTER_PROVISIONING_ENABLED') !== 'true') {
+      throw new ConflictException({
+        code: 'SOURCE_MASTER_APPROVAL_REQUIRED',
+        message: 'Chưa có phê duyệt master, lịch phân ca và tiêu chí timestamp cho dữ liệu nguồn.',
+      });
+    }
+
+    const record = await this.prisma.attendanceImport.findUnique({
+      where: { id },
+      include: { rawRows: true },
+    });
+    if (!record) throw new NotFoundException();
+    if (record.status !== 'ACCEPTED') {
+      throw new ConflictException('Chỉ có thể duyệt nguồn cho import đã ACCEPTED.');
+    }
+    if (!record.rawRows.length) {
+      throw new ConflictException('Import không có dữ liệu raw để tạo master.');
+    }
+
+    const employeeMaster = new Map<
+      string,
+      {
+        name: string;
+        departmentName: string;
+      }
+    >();
+    let masterConflictCount = 0;
+    for (const raw of record.rawRows) {
+      const code = raw.employeeCode.trim();
+      const name = raw.employeeName.trim();
+      const departmentName = raw.departmentName.trim();
+      if (!code || !name || !departmentName) {
+        masterConflictCount++;
+        continue;
+      }
+      const existing = employeeMaster.get(code);
+      if (existing && (existing.name !== name || existing.departmentName !== departmentName)) {
+        masterConflictCount++;
+        continue;
+      }
+      employeeMaster.set(code, { name, departmentName });
+    }
+    if (masterConflictCount) {
+      throw new ConflictException({
+        code: 'SOURCE_MASTER_CONFLICT',
+        message: `Nguồn có ${masterConflictCount} dòng thiếu hoặc mâu thuẫn hồ sơ nhân viên.`,
+      });
+    }
+
+    const validDates = record.rawRows
+      .flatMap((raw) => (this.isIsoDate(raw.attendanceDateRaw) ? [raw.attendanceDateRaw] : []))
+      .sort();
+    if (!validDates.length) {
+      throw new ConflictException('Nguồn không có ngày ca hợp lệ.');
+    }
+    const sourceFrom = validDates[0]!;
+    const sourceTo = validDates.at(-1)!;
+    const rowsByEmployeeDate = new Map<string, RawRow[]>();
+    for (const raw of record.rawRows) {
+      if (!this.isIsoDate(raw.attendanceDateRaw)) continue;
+      const key = `${raw.employeeCode}\u0000${raw.attendanceDateRaw}`;
+      const grouped = rowsByEmployeeDate.get(key) ?? [];
+      grouped.push(raw);
+      rowsByEmployeeDate.set(key, grouped);
+    }
+    const multipleRowIds = new Set(
+      [...rowsByEmployeeDate.values()]
+        .filter((rows) => rows.length > 1)
+        .flatMap((rows) => rows.map((row) => row.id)),
+    );
+    const departmentNames = [
+      ...new Set([...employeeMaster.values()].map((employee) => employee.departmentName)),
+    ];
+    const departmentCodeByName = new Map(
+      departmentNames.map((name) => [name, this.sourceDepartmentCode(name)]),
+    );
+
+    const provisioned = await this.prisma.$transaction(
+      async (tx) => {
+        const possibleDepartments = await tx.department.findMany({
+          where: {
+            OR: [
+              { name: { in: departmentNames } },
+              { code: { in: [...departmentCodeByName.values()] } },
+            ],
+          },
+        });
+        const departmentsByName = new Map<string, typeof possibleDepartments>();
+        for (const department of possibleDepartments) {
+          const matches = departmentsByName.get(department.name) ?? [];
+          matches.push(department);
+          departmentsByName.set(department.name, matches);
+        }
+        if ([...departmentsByName.values()].some((matches) => matches.length > 1)) {
+          throw new ConflictException({
+            code: 'DEPARTMENT_MASTER_AMBIGUOUS',
+            message: 'Master hiện có nhiều phòng ban trùng tên; cần HR xử lý trước.',
+          });
+        }
+        for (const department of possibleDepartments) {
+          const expectedName = [...departmentCodeByName.entries()].find(
+            ([, code]) => code === department.code,
+          )?.[0];
+          if (expectedName && expectedName !== department.name) {
+            throw new ConflictException({
+              code: 'DEPARTMENT_CODE_CONFLICT',
+              message: 'Mã phòng ban dẫn xuất đã tồn tại cho một tên khác.',
+            });
+          }
+        }
+        const missingDepartments = departmentNames.filter((name) => !departmentsByName.has(name));
+        if (missingDepartments.length) {
+          await tx.department.createMany({
+            data: missingDepartments.map((name) => ({
+              code: departmentCodeByName.get(name)!,
+              name,
+              active: true,
+            })),
+          });
+        }
+        const departments = await tx.department.findMany({
+          where: { name: { in: departmentNames } },
+        });
+        const departmentByName = new Map(
+          departments.map((department) => [department.name, department]),
+        );
+
+        const employeeCodes = [...employeeMaster.keys()];
+        const existingEmployees = await tx.employee.findMany({
+          where: { code: { in: employeeCodes } },
+          include: { department: true },
+        });
+        const conflictingEmployees = existingEmployees.filter((employee) => {
+          const expected = employeeMaster.get(employee.code)!;
+          return (
+            employee.name !== expected.name || employee.department?.name !== expected.departmentName
+          );
+        });
+        if (conflictingEmployees.length) {
+          throw new ConflictException({
+            code: 'EMPLOYEE_MASTER_CONFLICT',
+            message: `${conflictingEmployees.length} mã nhân viên đã tồn tại nhưng khác tên hoặc phòng ban.`,
+          });
+        }
+        const existingEmployeeCodes = new Set(existingEmployees.map((employee) => employee.code));
+        const missingEmployees = employeeCodes.filter((code) => !existingEmployeeCodes.has(code));
+        if (missingEmployees.length) {
+          await tx.employee.createMany({
+            data: missingEmployees.map((code) => {
+              const source = employeeMaster.get(code)!;
+              return {
+                code,
+                name: source.name,
+                departmentId: departmentByName.get(source.departmentName)!.id,
+                active: true,
+              };
+            }),
+          });
+        }
+        const employees = await tx.employee.findMany({
+          where: { code: { in: employeeCodes } },
+          select: { id: true, code: true },
+        });
+        const employeeByCode = new Map(employees.map((employee) => [employee.code, employee]));
+        for (const employee of employees) {
+          await tx.attendanceRaw.updateMany({
+            where: { importId: id, employeeCode: employee.code },
+            data: { employeeId: employee.id },
+          });
+        }
+
+        const shiftByCode = new Map<SupportedShiftCode, { id: string; code: string }>();
+        for (const code of Object.keys(SHIFT_DEFINITIONS) as SupportedShiftCode[]) {
+          const definition = SHIFT_DEFINITIONS[code];
+          const shift = await tx.shift.upsert({
+            where: { code },
+            update: { active: true },
+            create: { code, name: definition.name, active: true },
+            select: { id: true, code: true },
+          });
+          shiftByCode.set(code, shift);
+          await this.ensureApprovedRuleCoverage(tx, shift.id, code, sourceFrom, sourceTo);
+        }
+
+        const periodKeys = [...new Set(validDates.map((date) => date.slice(0, 7)))];
+        await tx.attendancePeriod.createMany({
+          data: periodKeys.map((key) => {
+            const year = Number(key.slice(0, 4));
+            const month = Number(key.slice(5, 7));
+            return { year, month };
+          }),
+          skipDuplicates: true,
+        });
+
+        const candidates = record.rawRows.flatMap((raw) => {
+          const shiftCode = this.sourceShiftCode(raw.shiftNameRaw);
+          if (!shiftCode || !this.isIsoDate(raw.attendanceDateRaw) || multipleRowIds.has(raw.id))
+            return [];
+          const employee = employeeByCode.get(raw.employeeCode);
+          const shift = shiftByCode.get(shiftCode);
+          if (!employee || !shift) return [];
+          return [
+            {
+              employeeId: employee.id,
+              shiftId: shift.id,
+              shiftDate: new Date(`${raw.attendanceDateRaw}T00:00:00.000Z`),
+              sourceType: APPROVED_IMPORT_SOURCE_TYPE,
+              sourceRef: `import:${id}:raw:${raw.id}`,
+              version: 1,
+            },
+          ];
+        });
+        const existingSchedules = await tx.workSchedule.findMany({
+          where: {
+            employeeId: { in: employees.map((employee) => employee.id) },
+            shiftDate: {
+              gte: new Date(`${sourceFrom}T00:00:00.000Z`),
+              lte: new Date(`${sourceTo}T00:00:00.000Z`),
+            },
+            version: 1,
+          },
+        });
+        const existingScheduleByKey = new Map(
+          existingSchedules.map((schedule) => [
+            `${schedule.employeeId}\u0000${schedule.shiftDate.toISOString().slice(0, 10)}`,
+            schedule,
+          ]),
+        );
+        const scheduleConflicts = candidates.filter((candidate) => {
+          const key = `${candidate.employeeId}\u0000${candidate.shiftDate.toISOString().slice(0, 10)}`;
+          const existing = existingScheduleByKey.get(key);
+          return existing && existing.shiftId !== candidate.shiftId;
+        });
+        if (scheduleConflicts.length) {
+          throw new ConflictException({
+            code: 'WORK_SCHEDULE_CONFLICT',
+            message: `${scheduleConflicts.length} lịch hiện có mâu thuẫn với nguồn đã duyệt.`,
+          });
+        }
+        const newSchedules = candidates.filter((candidate) => {
+          const key = `${candidate.employeeId}\u0000${candidate.shiftDate.toISOString().slice(0, 10)}`;
+          return !existingScheduleByKey.has(key);
+        });
+        if (newSchedules.length) await tx.workSchedule.createMany({ data: newSchedules });
+
+        const existingMultipleExceptions = multipleRowIds.size
+          ? await tx.attendanceException.findMany({
+              where: {
+                rawId: { in: [...multipleRowIds] },
+                code: 'MULTIPLE_ROWS_SAME_EMPLOYEE_DATE',
+              },
+              select: { rawId: true },
+            })
+          : [];
+        const rawIdsWithMultipleException = new Set(
+          existingMultipleExceptions.flatMap((item) => (item.rawId ? [item.rawId] : [])),
+        );
+        const newMultipleExceptions = [...multipleRowIds]
+          .filter((rawId) => !rawIdsWithMultipleException.has(rawId))
+          .map((rawId) => ({
+            rawId,
+            code: 'MULTIPLE_ROWS_SAME_EMPLOYEE_DATE',
+            blocking: true,
+            details: { reason: 'Không tự cộng/ghép nhiều dòng cùng nhân viên và ngày ca.' },
+          }));
+        if (newMultipleExceptions.length) {
+          await tx.attendanceException.createMany({ data: newMultipleExceptions });
+        }
+
+        const summary = {
+          departments: departments.length,
+          employees: employees.length,
+          schedules: candidates.length,
+          multipleRowExceptions: multipleRowIds.size,
+          periods: periodKeys.length,
+          sourceFrom,
+          sourceTo,
+        };
+        await tx.auditLog.create({
+          data: {
+            actorId: user.id,
+            action: 'IMPORT_SOURCE_APPROVED_AND_MASTER_PROVISIONED',
+            entity: 'AttendanceImport',
+            entityId: id,
+            reason: 'Chủ dự án xác nhận master, alias ca, ngày bắt đầu ca và quy tắc Ca3 D+1.',
+            after: {
+              ...summary,
+              approval: {
+                employeeAndDepartmentMasterFromSource: true,
+                shiftAliases: { Ca1: 'CA1', Ca3: 'CA3' },
+                sourceDateIsShiftStartDate: true,
+                ca3CheckoutEarlierThanCheckinIsNextDay: true,
+              },
+            },
+          },
+        });
+        return summary;
+      },
+      { maxWait: 10_000, timeout: 60_000 },
+    );
+
+    return { master: provisioned, processing: await this.process(id, user) };
+  }
+
+  async source(id: string) {
+    const record = await this.prisma.attendanceImport.findUnique({ where: { id } });
+    if (!record?.storageKey) throw new NotFoundException();
+    return { buffer: await readFile(record.storageKey), filename: record.originalName };
+  }
+
+  private assertWorkbook(file: UploadedWorkbook | undefined): asserts file is UploadedWorkbook {
+    if (!file) throw new BadRequestException('Thiếu file XLSX.');
+    if (file.size > 10 * 1024 * 1024) throw new BadRequestException('File vượt quá 10 MB.');
+    if (!file.originalname.toLowerCase().endsWith('.xlsx')) {
+      throw new BadRequestException('Chỉ chấp nhận file .xlsx.');
+    }
+  }
+
+  private duplicateKeyFields(): SourceField[] {
+    const value = this.config.get<string>('DUPLICATE_KEY_FIELDS')?.trim();
+    if (!value) return [];
+    const fields = value.split(',').map((field) => field.trim());
+    if (fields.some((field) => !SOURCE_FIELDS.includes(field as SourceField))) {
+      throw new Error('DUPLICATE_KEY_FIELDS chứa trường không hợp lệ.');
+    }
+    return [...new Set(fields)] as SourceField[];
+  }
+
+  private duplicateKey(row: ParsedSourceRow, fields: SourceField[]) {
+    const canonical = fields.map((field) => [field, row[field] ?? null]);
+    return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
+  }
+
+  private async processLinkedRows(
+    rows: Array<RawRow & { employeeId: string }>,
+    existingKeys: Set<string>,
+    actorId: string,
+  ) {
+    if (!rows.length) {
+      return { missingSchedules: 0, missingTimestampEvidence: 0, calculatedRows: 0 };
+    }
+    const dateValues = rows.flatMap((row) =>
+      this.isIsoDate(row.attendanceDateRaw) ? [row.attendanceDateRaw!] : [],
+    );
+    const minDate = dateValues.length ? new Date(`${dateValues.sort()[0]}T00:00:00.000Z`) : null;
+    const maxDate = dateValues.length
+      ? new Date(`${dateValues.sort().at(-1)}T00:00:00.000Z`)
+      : null;
+    const schedules: ScheduleWithShift[] =
+      minDate && maxDate
+        ? await this.prisma.workSchedule.findMany({
+            where: {
+              employeeId: { in: [...new Set(rows.map((row) => row.employeeId))] },
+              shiftDate: { gte: minDate, lte: maxDate },
+            },
+            include: { shift: { include: { rules: true } } },
+          })
+        : [];
+    const scheduleByKey = new Map<string, ScheduleWithShift>();
+    for (const schedule of schedules.sort((a, b) => b.version - a.version)) {
+      const key = `${schedule.employeeId}\u0000${schedule.shiftDate.toISOString().slice(0, 10)}`;
+      if (!scheduleByKey.has(key)) scheduleByKey.set(key, schedule);
+    }
+    const periods = await this.prisma.attendancePeriod.findMany();
+    const periodByKey = new Map(
+      periods.map((period) => [`${period.year}-${period.month}`, period]),
+    );
+    const rowsPerEmployeeDate = new Map<string, number>();
+    for (const raw of rows) {
+      if (!this.isIsoDate(raw.attendanceDateRaw)) continue;
+      const key = `${raw.employeeId}\u0000${raw.attendanceDateRaw}`;
+      rowsPerEmployeeDate.set(key, (rowsPerEmployeeDate.get(key) ?? 0) + 1);
+    }
+    const recovered = new Map<string, Set<string>>();
+    const markRecovered = (rawId: string, code: string) => {
+      const rawIds = recovered.get(code) ?? new Set<string>();
+      rawIds.add(rawId);
+      recovered.set(code, rawIds);
+    };
+    let missingSchedules = 0;
+    let missingTimestampEvidence = 0;
+    let calculatedRows = 0;
+
+    for (const raw of rows) {
+      if (!this.isIsoDate(raw.attendanceDateRaw)) {
+        await this.ensureRawException(raw.id, 'INVALID_SHIFT_DATE', true, existingKeys);
+        continue;
+      }
+      const shiftDate = raw.attendanceDateRaw!;
+      const employeeDateKey = `${raw.employeeId}\u0000${shiftDate}`;
+      if ((rowsPerEmployeeDate.get(employeeDateKey) ?? 0) > 1) {
+        await this.ensureRawException(
+          raw.id,
+          'MULTIPLE_ROWS_SAME_EMPLOYEE_DATE',
+          true,
+          existingKeys,
+          { reason: 'Không tự cộng/ghép nhiều dòng cùng nhân viên và ngày ca.' },
+        );
+        continue;
+      }
+      const sourceShiftCode = this.sourceShiftCode(raw.shiftNameRaw);
+      if (!sourceShiftCode) {
+        await this.ensureRawException(
+          raw.id,
+          'UNSUPPORTED_SHIFT_FOR_CALCULATION',
+          true,
+          existingKeys,
+        );
+        continue;
+      }
+      const schedule = scheduleByKey.get(`${raw.employeeId}\u0000${shiftDate}`);
+      if (!schedule) {
+        await this.ensureRawException(raw.id, 'WORK_SCHEDULE_NOT_FOUND', true, existingKeys);
+        missingSchedules++;
+        continue;
+      }
+      markRecovered(raw.id, 'WORK_SCHEDULE_NOT_FOUND');
+      if (sourceShiftCode !== schedule.shift.code) {
+        await this.ensureRawException(raw.id, 'SHIFT_MISMATCH', true, existingKeys, {
+          sourceShift: raw.shiftNameRaw,
+          scheduledShift: schedule.shift.code,
+        });
+        continue;
+      }
+      markRecovered(raw.id, 'SHIFT_MISMATCH');
+      const timestamps = this.approvedSourceTimestamps(raw, schedule);
+      if (!timestamps) {
+        await this.ensureRawException(raw.id, 'TIMESTAMP_EVIDENCE_REQUIRED', true, existingKeys, {
+          reason: 'Thiếu giờ vào/ra hoặc nguồn lịch chưa được duyệt để gắn ngày cho timestamp.',
+        });
+        missingTimestampEvidence++;
+        continue;
+      }
+      markRecovered(raw.id, 'TIMESTAMP_EVIDENCE_REQUIRED');
+      const rule = schedule.shift.rules
+        .filter((candidate) => candidate.effectiveFrom <= new Date(`${shiftDate}T00:00:00.000Z`))
+        .filter(
+          (candidate) =>
+            !candidate.effectiveTo ||
+            candidate.effectiveTo >= new Date(`${shiftDate}T00:00:00.000Z`),
+        )
+        .sort((a, b) => b.version - a.version)[0];
+      const [year, month] = shiftDate.split('-').map(Number);
+      const period = periodByKey.get(`${year}-${month}`);
+      if (!rule) {
+        await this.ensureRawException(raw.id, 'SHIFT_RULE_NOT_FOUND', true, existingKeys);
+        continue;
+      }
+      markRecovered(raw.id, 'SHIFT_RULE_NOT_FOUND');
+      if (!period) {
+        await this.ensureRawException(raw.id, 'ATTENDANCE_PERIOD_NOT_FOUND', true, existingKeys);
+        continue;
+      }
+      markRecovered(raw.id, 'ATTENDANCE_PERIOD_NOT_FOUND');
+      const result = calculateAttendance(
+        {
+          employeeCode: raw.employeeCode,
+          shiftCode: schedule.shift.code,
+          shiftDate,
+          checkInAt: timestamps.checkInAt,
+          checkOutAt: timestamps.checkOutAt,
+          shiftDateEvidence: { type: 'WORK_SCHEDULE', reference: schedule.sourceRef },
+          checkOutDateEvidence: timestamps.checkOutDateEvidence,
+        },
+        {
+          timezone: 'Asia/Ho_Chi_Minh',
+          abnormalDurationThresholdSeconds: rule.abnormalDurationThresholdSeconds,
+        },
+      );
+      const normalization = await this.prisma.attendanceNormalization.upsert({
+        where: { rawId_revision: { rawId: raw.id, revision: 1 } },
+        update: {},
+        create: {
+          rawId: raw.id,
+          revision: 1,
+          shiftDate: new Date(`${shiftDate}T00:00:00.000Z`),
+          checkInAt:
+            result.checkInEpochSeconds === null
+              ? null
+              : new Date(result.checkInEpochSeconds * 1000),
+          checkOutAt:
+            result.checkOutEpochSeconds === null
+              ? null
+              : new Date(result.checkOutEpochSeconds * 1000),
+          shiftCode: result.shiftCode,
+          shiftDateEvidence: { type: 'WORK_SCHEDULE', reference: schedule.sourceRef },
+          checkOutDateEvidence: timestamps.checkOutDateEvidence,
+          ruleVersion: `engine-${result.ruleVersion}`,
+        },
+      });
+      const inputHash = createHash('sha256')
+        .update(
+          JSON.stringify({
+            rawId: raw.id,
+            shiftDate,
+            checkIn: timestamps.checkInAt,
+            checkOut: timestamps.checkOutAt,
+            shift: schedule.shift.code,
+            rule: rule.version,
+          }),
+        )
+        .digest('hex');
+      const calculation = await this.prisma.attendanceCalculation.upsert({
+        where: { rawId_revision: { rawId: raw.id, revision: 1 } },
+        update: {},
+        create: {
+          rawId: raw.id,
+          normalizationId: normalization.id,
+          periodId: period.id,
+          shiftRuleId: rule.id,
+          engineVersion: result.ruleVersion,
+          revision: 1,
+          inputHash,
+          status:
+            result.status === 'VALID' ? CalculationStatus.VALID : CalculationStatus.NEEDS_REVIEW,
+          ...(result.calculation ?? {}),
+        },
+      });
+      for (const exception of result.exceptions) {
+        const key = `raw:${raw.id}:${exception.code}`;
+        if (existingKeys.has(key)) continue;
+        await this.prisma.attendanceException.create({
+          data: {
+            rawId: raw.id,
+            calculationId: calculation.id,
+            code: exception.code,
+            blocking: exception.blocking,
+            details: { message: exception.message },
+          },
+        });
+        existingKeys.add(key);
+      }
+      calculatedRows++;
+    }
+    await this.resolveRecoveredExceptions(actorId, recovered);
+    return { missingSchedules, missingTimestampEvidence, calculatedRows };
+  }
+
+  private async ensureApprovedRuleCoverage(
+    tx: Prisma.TransactionClient,
+    shiftId: string,
+    shiftCode: SupportedShiftCode,
+    sourceFrom: string,
+    sourceTo: string,
+  ) {
+    const definition = SHIFT_DEFINITIONS[shiftCode];
+    const from = new Date(`${sourceFrom}T00:00:00.000Z`);
+    const to = new Date(`${sourceTo}T00:00:00.000Z`);
+    const rules = await tx.shiftRule.findMany({ where: { shiftId }, orderBy: { version: 'asc' } });
+    const matchesDefinition = (rule: (typeof rules)[number]) => {
+      const tiers = rule.tiers as Record<string, unknown>;
+      return (
+        rule.scheduledStartSeconds === definition.scheduledStartSeconds &&
+        rule.scheduledCompletionSeconds === definition.scheduledCompletionSeconds &&
+        rule.breakStartSeconds === definition.breakStartSeconds &&
+        rule.breakEndSeconds === definition.breakEndSeconds &&
+        rule.abnormalDurationThresholdSeconds === definition.abnormalDurationThresholdSeconds &&
+        Object.entries(definition.tiers).every(([key, value]) => tiers[key] === value)
+      );
+    };
+    const coveringRule = rules.find(
+      (rule) =>
+        rule.effectiveFrom <= from &&
+        (!rule.effectiveTo || rule.effectiveTo >= to) &&
+        matchesDefinition(rule),
+    );
+    if (coveringRule) return;
+
+    const extendableRule = rules.find(
+      (rule) =>
+        rule.effectiveFrom > from &&
+        (!rule.effectiveTo || rule.effectiveTo >= to) &&
+        matchesDefinition(rule),
+    );
+    if (!extendableRule) {
+      throw new ConflictException({
+        code: 'APPROVED_SHIFT_RULE_NOT_AVAILABLE',
+        message: `Chưa có bộ quy tắc ${shiftCode} khớp quyết định đã duyệt cho kỳ nguồn.`,
+      });
+    }
+    const overlapsAnotherRule = rules.some(
+      (rule) =>
+        rule.id !== extendableRule.id &&
+        rule.effectiveFrom <= extendableRule.effectiveFrom &&
+        (!rule.effectiveTo || rule.effectiveTo >= from),
+    );
+    if (overlapsAnotherRule) {
+      throw new ConflictException({
+        code: 'SHIFT_RULE_PERIOD_CONFLICT',
+        message: `Khoảng hiệu lực quy tắc ${shiftCode} bị chồng lấn; không tự điều chỉnh.`,
+      });
+    }
+    await tx.shiftRule.update({
+      where: { id: extendableRule.id },
+      data: { effectiveFrom: from },
+    });
+  }
+
+  private approvedSourceTimestamps(raw: RawRow, schedule: ScheduleWithShift) {
+    if (this.isFullOffsetTimestamp(raw.checkInRaw) && this.isFullOffsetTimestamp(raw.checkOutRaw)) {
+      return {
+        checkInAt: raw.checkInRaw,
+        checkOutAt: raw.checkOutRaw,
+        checkOutDateEvidence: {
+          type: 'SOURCE_TIMESTAMP' as const,
+          reference: `${raw.sheet}:${raw.rowNo}`,
+        },
+      };
+    }
+    if (
+      schedule.sourceType !== APPROVED_IMPORT_SOURCE_TYPE ||
+      !this.isIsoDate(raw.attendanceDateRaw)
+    )
+      return null;
+    const checkIn = this.timeOnly(raw.checkInRaw);
+    const checkOut = this.timeOnly(raw.checkOutRaw);
+    const shiftCode = this.sourceShiftCode(raw.shiftNameRaw);
+    if (!checkIn || !checkOut || !shiftCode || shiftCode !== schedule.shift.code) return null;
+
+    const checkoutDate =
+      shiftCode === 'CA3' && checkOut.seconds < checkIn.seconds
+        ? this.nextIsoDate(raw.attendanceDateRaw)
+        : raw.attendanceDateRaw;
+    return {
+      checkInAt: `${raw.attendanceDateRaw}T${checkIn.value}+07:00`,
+      checkOutAt: `${checkoutDate}T${checkOut.value}+07:00`,
+      checkOutDateEvidence: {
+        type: 'APPROVED_MAPPING' as const,
+        reference:
+          shiftCode === 'CA3' && checkoutDate !== raw.attendanceDateRaw
+            ? `${schedule.sourceRef}:CA3_D_PLUS_1`
+            : `${schedule.sourceRef}:SOURCE_SHIFT_DATE`,
+      },
+    };
+  }
+
+  private timeOnly(value: string | null) {
+    const match = value?.trim().match(/^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/);
+    if (!match) return null;
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    const seconds = Number(match[3] ?? 0);
+    return {
+      seconds: hours * 3600 + minutes * 60 + seconds,
+      value: `${match[1]}:${match[2]}:${String(seconds).padStart(2, '0')}`,
+    };
+  }
+
+  private nextIsoDate(value: string) {
+    const date = new Date(`${value}T00:00:00.000Z`);
+    date.setUTCDate(date.getUTCDate() + 1);
+    return date.toISOString().slice(0, 10);
+  }
+
+  private sourceShiftCode(value: string | null): SupportedShiftCode | null {
+    const normalized = value?.trim().toLocaleLowerCase('vi-VN');
+    if (normalized === 'ca1') return 'CA1';
+    if (normalized === 'ca3') return 'CA3';
+    return null;
+  }
+
+  private sourceDepartmentCode(name: string) {
+    return `SX-${createHash('sha256').update(name.normalize('NFC')).digest('hex').slice(0, 16).toUpperCase()}`;
+  }
+
+  private async resolveRecoveredExceptions(actorId: string, recovered: Map<string, Set<string>>) {
+    for (const [code, rawIds] of recovered) {
+      if (!rawIds.size) continue;
+      const exceptions = await this.prisma.attendanceException.findMany({
+        where: { code, status: 'OPEN', rawId: { in: [...rawIds] } },
+        select: { id: true },
+      });
+      if (!exceptions.length) continue;
+      await this.prisma.$transaction([
+        this.prisma.exceptionResolution.createMany({
+          data: exceptions.map((exception) => ({
+            exceptionId: exception.id,
+            action: 'REVALIDATED',
+            before: { status: 'OPEN' },
+            after: { status: 'RESOLVED' },
+            reason: 'Điều kiện nguồn đã được bổ sung và pipeline kiểm tra lại thành công.',
+            actorId,
+          })),
+        }),
+        this.prisma.attendanceException.updateMany({
+          where: { id: { in: exceptions.map((exception) => exception.id) } },
+          data: { status: 'RESOLVED' },
+        }),
+      ]);
+    }
+  }
+
+  private async ensureRawException(
+    rawId: string,
+    code: string,
+    blocking: boolean,
+    existingKeys: Set<string>,
+    details?: Prisma.InputJsonObject,
+  ) {
+    const key = `raw:${rawId}:${code}`;
+    if (existingKeys.has(key)) return;
+    await this.prisma.attendanceException.create({
+      data: { rawId, code, blocking, ...(details ? { details } : {}) },
+    });
+    existingKeys.add(key);
+  }
+
+  private isIsoDate(value: string | null): value is string {
+    return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+  }
+
+  private isFullOffsetTimestamp(value: string | null): value is string {
+    return Boolean(
+      value &&
+        /^\d{4}-\d{2}-\d{2}T/.test(value) &&
+        /(Z|[+-]\d{2}:\d{2})$/.test(value) &&
+        !Number.isNaN(Date.parse(value)),
+    );
+  }
+
+  private async storeSource(buffer: Buffer) {
+    const configured = this.config.get<string>('UPLOAD_DIR') ?? './storage/uploads';
+    const directory = resolve(configured);
+    await mkdir(directory, { recursive: true });
+    const storageKey = join(directory, `${randomUUID()}.xlsx`);
+    await writeFile(storageKey, buffer, { flag: 'wx' });
+    return storageKey;
+  }
+}

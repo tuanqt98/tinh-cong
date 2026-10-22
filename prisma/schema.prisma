@@ -1,0 +1,496 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../apps/api/src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleCode {
+  ADMIN
+  HR
+  MANAGER
+  EMPLOYEE
+}
+
+enum PeriodStatus {
+  DRAFT
+  REVIEWED
+  APPROVED
+  LOCKED
+  PUBLISHED
+}
+
+enum ImportStatus {
+  PREVIEW
+  ACCEPTED
+  REJECTED
+}
+
+enum CalculationStatus {
+  VALID
+  NEEDS_REVIEW
+}
+
+enum ExceptionStatus {
+  OPEN
+  RESOLVED
+}
+
+enum PublicationStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+}
+
+enum FeedbackStatus {
+  OPEN
+  RESOLVED
+}
+
+model Department {
+  id        String    @id @default(uuid()) @db.Uuid
+  code      String    @unique @db.VarChar(50)
+  name      String    @db.VarChar(255)
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  employees Employee[]
+  scopes    ManagerScope[]
+
+  @@index([active])
+  @@map("departments")
+}
+
+model Employee {
+  id          String    @id @default(uuid()) @db.Uuid
+  code        String    @unique @db.VarChar(50)
+  name        String    @db.VarChar(255)
+  departmentId String?  @db.Uuid
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+  department  Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  user        User?
+  schedules   WorkSchedule[]
+  raws        AttendanceRaw[]
+  timesheets  Timesheet[]
+  feedback    EmployeeFeedback[]
+  scopes      ManagerScope[]
+
+  @@index([departmentId, active])
+  @@index([name])
+  @@map("employees")
+}
+
+model User {
+  id                 String    @id @default(uuid()) @db.Uuid
+  username           String    @unique @db.VarChar(100)
+  passwordHash       String    @db.VarChar(255)
+  employeeId         String?   @unique @db.Uuid
+  active             Boolean   @default(true)
+  failedLoginCount   Int       @default(0)
+  lockedUntil        DateTime? @db.Timestamptz(3)
+  refreshTokenHash   String?   @db.VarChar(128)
+  createdAt          DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime  @updatedAt @db.Timestamptz(3)
+  employee           Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  roles              UserRole[]
+  scopes             ManagerScope[]
+  imports            AttendanceImport[]
+  adjustments        AttendanceAdjustment[]
+  resolutions        ExceptionResolution[]
+  approvals          AttendanceApproval[]
+  publications       TimesheetPublication[]
+  auditLogs          AuditLog[]
+
+  @@index([active, lockedUntil])
+  @@map("users")
+}
+
+model Role {
+  id    String   @id @default(uuid()) @db.Uuid
+  code  RoleCode @unique
+  users UserRole[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  userId String @db.Uuid
+  roleId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model ManagerScope {
+  id           String      @id @default(uuid()) @db.Uuid
+  userId       String      @db.Uuid
+  departmentId String?     @db.Uuid
+  employeeId   String?     @db.Uuid
+  effectiveFrom DateTime   @default(now()) @db.Timestamptz(3)
+  effectiveTo  DateTime?   @db.Timestamptz(3)
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  employee     Employee?   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([userId, effectiveFrom, effectiveTo])
+  @@index([departmentId])
+  @@index([employeeId])
+  @@map("manager_scopes")
+}
+
+model Shift {
+  id        String      @id @default(uuid()) @db.Uuid
+  code      String      @unique @db.VarChar(50)
+  name      String      @db.VarChar(255)
+  active    Boolean     @default(true)
+  createdAt DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime    @updatedAt @db.Timestamptz(3)
+  rules     ShiftRule[]
+  schedules WorkSchedule[]
+
+  @@index([active])
+  @@map("shifts")
+}
+
+model ShiftRule {
+  id                               String    @id @default(uuid()) @db.Uuid
+  shiftId                          String    @db.Uuid
+  version                          Int
+  effectiveFrom                    DateTime  @db.Date
+  effectiveTo                      DateTime? @db.Date
+  timezone                         String    @default("Asia/Ho_Chi_Minh") @db.VarChar(100)
+  scheduledStartSeconds            Int
+  scheduledCompletionSeconds       Int
+  breakStartSeconds                Int
+  breakEndSeconds                  Int
+  abnormalDurationThresholdSeconds Int       @default(57600)
+  tiers                            Json
+  createdAt                        DateTime   @default(now()) @db.Timestamptz(3)
+  shift                            Shift      @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+  calculations                     AttendanceCalculation[]
+
+  @@unique([shiftId, version])
+  @@index([shiftId, effectiveFrom, effectiveTo])
+  @@map("shift_rules")
+}
+
+model WorkSchedule {
+  id         String   @id @default(uuid()) @db.Uuid
+  employeeId String   @db.Uuid
+  shiftId    String   @db.Uuid
+  shiftDate  DateTime @db.Date
+  sourceType String   @db.VarChar(50)
+  sourceRef  String   @db.VarChar(255)
+  version    Int      @default(1)
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  shift      Shift    @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+
+  @@unique([employeeId, shiftDate, version])
+  @@index([shiftId, shiftDate])
+  @@map("work_schedules")
+}
+
+model AttendancePeriod {
+  id           String       @id @default(uuid()) @db.Uuid
+  year         Int
+  month        Int
+  status       PeriodStatus @default(DRAFT)
+  version      Int          @default(1)
+  timezone     String       @default("Asia/Ho_Chi_Minh") @db.VarChar(100)
+  lockedAt     DateTime?    @db.Timestamptz(3)
+  publishedAt  DateTime?    @db.Timestamptz(3)
+  createdAt    DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime     @updatedAt @db.Timestamptz(3)
+  calculations AttendanceCalculation[]
+  approvals    AttendanceApproval[]
+  timesheets   Timesheet[]
+
+  @@unique([year, month])
+  @@index([status])
+  @@map("attendance_periods")
+}
+
+model AttendanceImport {
+  id              String       @id @default(uuid()) @db.Uuid
+  originalName    String       @db.VarChar(255)
+  storageKey      String?      @db.VarChar(500)
+  sha256          String       @db.Char(64)
+  mappingVersion  String       @db.VarChar(100)
+  status          ImportStatus @default(PREVIEW)
+  attemptedById   String       @db.Uuid
+  attemptedAt     DateTime     @default(now()) @db.Timestamptz(3)
+  confirmedAt     DateTime?    @db.Timestamptz(3)
+  rejectionReason String?      @db.VarChar(1000)
+  metadata        Json?
+  attemptedBy     User         @relation(fields: [attemptedById], references: [id], onDelete: Restrict)
+  issues          AttendanceImportIssue[]
+  rawRows         AttendanceRaw[]
+
+  @@index([sha256, status])
+  @@index([attemptedById, attemptedAt])
+  @@map("attendance_imports")
+}
+
+model AttendanceImportIssue {
+  id        String   @id @default(uuid()) @db.Uuid
+  importId  String   @db.Uuid
+  sheet     String   @db.VarChar(255)
+  rowNo     Int
+  issueCode String   @db.VarChar(100)
+  matchScope String? @db.VarChar(50)
+  evidence  Json?
+  import    AttendanceImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+  exceptions AttendanceException[]
+
+  @@index([importId, issueCode])
+  @@map("attendance_import_issues")
+}
+
+model AttendanceRaw {
+  id                 String   @id @default(uuid()) @db.Uuid
+  importId           String   @db.Uuid
+  employeeId         String?  @db.Uuid
+  sheet              String   @db.VarChar(255)
+  rowNo              Int
+  employeeCode       String   @db.VarChar(50)
+  employeeName       String   @db.VarChar(255)
+  departmentName     String   @db.VarChar(255)
+  attendanceDateRaw  String?  @db.VarChar(255)
+  checkInRaw         String?  @db.VarChar(255)
+  checkOutRaw        String?  @db.VarChar(255)
+  shiftNameRaw       String?  @db.VarChar(255)
+  rawCells           Json
+  sourceIdentityHash String?  @db.Char(64)
+  createdAt          DateTime @default(now()) @db.Timestamptz(3)
+  import             AttendanceImport @relation(fields: [importId], references: [id], onDelete: Restrict)
+  employee           Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  normalizations     AttendanceNormalization[]
+  adjustments        AttendanceAdjustment[]
+  calculations       AttendanceCalculation[]
+  exceptions         AttendanceException[]
+
+  @@unique([importId, sheet, rowNo])
+  @@index([employeeId])
+  @@index([employeeCode])
+  @@index([sourceIdentityHash])
+  @@map("attendance_raw")
+}
+
+model AttendanceNormalization {
+  id                     String    @id @default(uuid()) @db.Uuid
+  rawId                  String    @db.Uuid
+  revision               Int
+  shiftDate              DateTime? @db.Date
+  checkInAt              DateTime? @db.Timestamptz(3)
+  checkOutAt             DateTime? @db.Timestamptz(3)
+  shiftCode              String?   @db.VarChar(50)
+  shiftDateEvidence      Json?
+  checkOutDateEvidence   Json?
+  ruleVersion            String    @db.VarChar(100)
+  createdAt              DateTime  @default(now()) @db.Timestamptz(3)
+  raw                    AttendanceRaw @relation(fields: [rawId], references: [id], onDelete: Restrict)
+  calculations           AttendanceCalculation[]
+
+  @@unique([rawId, revision])
+  @@index([shiftDate, shiftCode])
+  @@map("attendance_normalizations")
+}
+
+model AttendanceAdjustment {
+  id        String   @id @default(uuid()) @db.Uuid
+  rawId     String   @db.Uuid
+  revision  Int
+  before    Json
+  after     Json
+  reason    String   @db.VarChar(1000)
+  actorId   String   @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  raw       AttendanceRaw @relation(fields: [rawId], references: [id], onDelete: Restrict)
+  actor     User     @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  calculations AttendanceCalculation[]
+
+  @@unique([rawId, revision])
+  @@index([actorId, createdAt])
+  @@map("attendance_adjustments")
+}
+
+model AttendanceCalculation {
+  id               String            @id @default(uuid()) @db.Uuid
+  rawId            String            @db.Uuid
+  normalizationId  String            @db.Uuid
+  adjustmentId     String?           @db.Uuid
+  periodId         String            @db.Uuid
+  shiftRuleId      String            @db.Uuid
+  engineVersion    String            @db.VarChar(100)
+  revision         Int
+  inputHash        String            @db.Char(64)
+  status           CalculationStatus
+  presenceSeconds  Int?
+  breakSeconds     Int?
+  workedSeconds    Int?
+  lateSeconds      Int?
+  earlySeconds     Int?
+  tier100Seconds   Int?
+  tier130Seconds   Int?
+  tier150Seconds   Int?
+  tier210Seconds   Int?
+  createdAt        DateTime          @default(now()) @db.Timestamptz(3)
+  raw              AttendanceRaw     @relation(fields: [rawId], references: [id], onDelete: Restrict)
+  normalization    AttendanceNormalization @relation(fields: [normalizationId], references: [id], onDelete: Restrict)
+  adjustment       AttendanceAdjustment? @relation(fields: [adjustmentId], references: [id], onDelete: Restrict)
+  period           AttendancePeriod  @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  shiftRule        ShiftRule         @relation(fields: [shiftRuleId], references: [id], onDelete: Restrict)
+  exceptions       AttendanceException[]
+  timesheetLines   TimesheetLine[]
+
+  @@unique([rawId, revision])
+  @@index([periodId, status])
+  @@index([normalizationId])
+  @@map("attendance_calculations")
+}
+
+model AttendanceException {
+  id             String          @id @default(uuid()) @db.Uuid
+  rawId          String?         @db.Uuid
+  importIssueId  String?         @db.Uuid
+  calculationId  String?         @db.Uuid
+  code           String          @db.VarChar(100)
+  blocking       Boolean         @default(true)
+  status         ExceptionStatus @default(OPEN)
+  details        Json?
+  createdAt      DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime        @updatedAt @db.Timestamptz(3)
+  raw            AttendanceRaw? @relation(fields: [rawId], references: [id], onDelete: Restrict)
+  importIssue    AttendanceImportIssue? @relation(fields: [importIssueId], references: [id], onDelete: Restrict)
+  calculation    AttendanceCalculation? @relation(fields: [calculationId], references: [id], onDelete: Restrict)
+  resolutions    ExceptionResolution[]
+
+  @@index([status, blocking, code])
+  @@index([rawId])
+  @@map("attendance_exceptions")
+}
+
+model ExceptionResolution {
+  id          String   @id @default(uuid()) @db.Uuid
+  exceptionId String   @db.Uuid
+  action      String   @db.VarChar(100)
+  before      Json?
+  after       Json?
+  reason      String   @db.VarChar(1000)
+  actorId     String   @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  exception   AttendanceException @relation(fields: [exceptionId], references: [id], onDelete: Restrict)
+  actor       User     @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([exceptionId, createdAt])
+  @@map("exception_resolutions")
+}
+
+model AttendanceApproval {
+  id            String       @id @default(uuid()) @db.Uuid
+  periodId      String       @db.Uuid
+  fromStatus    PeriodStatus
+  toStatus      PeriodStatus
+  actorId       String       @db.Uuid
+  reason        String?      @db.VarChar(1000)
+  periodVersion Int
+  createdAt     DateTime     @default(now()) @db.Timestamptz(3)
+  period        AttendancePeriod @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  actor         User         @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([periodId, createdAt])
+  @@map("attendance_approvals")
+}
+
+model Timesheet {
+  id           String   @id @default(uuid()) @db.Uuid
+  periodId     String   @db.Uuid
+  employeeId   String   @db.Uuid
+  revision     Int
+  snapshot     Json
+  totalSeconds Int
+  lockedAt     DateTime? @db.Timestamptz(3)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  period       AttendancePeriod @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  employee     Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  lines        TimesheetLine[]
+  publications TimesheetPublication[]
+
+  @@unique([periodId, employeeId, revision])
+  @@index([employeeId, periodId])
+  @@map("timesheets")
+}
+
+model TimesheetLine {
+  id            String @id @default(uuid()) @db.Uuid
+  timesheetId   String @db.Uuid
+  calculationId String @db.Uuid
+  snapshot      Json
+  timesheet     Timesheet @relation(fields: [timesheetId], references: [id], onDelete: Restrict)
+  calculation   AttendanceCalculation @relation(fields: [calculationId], references: [id], onDelete: Restrict)
+
+  @@unique([timesheetId, calculationId])
+  @@map("timesheet_lines")
+}
+
+model TimesheetPublication {
+  id            String            @id @default(uuid()) @db.Uuid
+  timesheetId   String            @db.Uuid
+  artifactKey   String            @db.VarChar(500)
+  sha256        String            @db.Char(64)
+  status        PublicationStatus @default(PENDING)
+  publishedById String            @db.Uuid
+  publishedAt   DateTime?         @db.Timestamptz(3)
+  viewedAt      DateTime?         @db.Timestamptz(3)
+  confirmedAt   DateTime?         @db.Timestamptz(3)
+  timesheet     Timesheet         @relation(fields: [timesheetId], references: [id], onDelete: Restrict)
+  publishedBy   User              @relation(fields: [publishedById], references: [id], onDelete: Restrict)
+  feedback      EmployeeFeedback[]
+
+  @@unique([timesheetId, sha256])
+  @@index([status, publishedAt])
+  @@map("timesheet_publications")
+}
+
+model EmployeeFeedback {
+  id            String         @id @default(uuid()) @db.Uuid
+  publicationId String         @db.Uuid
+  employeeId    String         @db.Uuid
+  type          String         @db.VarChar(100)
+  body          String         @db.VarChar(4000)
+  status        FeedbackStatus @default(OPEN)
+  createdAt     DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime       @updatedAt @db.Timestamptz(3)
+  publication   TimesheetPublication @relation(fields: [publicationId], references: [id], onDelete: Restrict)
+  employee      Employee       @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+
+  @@index([employeeId, status])
+  @@index([publicationId])
+  @@map("employee_feedback")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  actorId   String?  @db.Uuid
+  action    String   @db.VarChar(100)
+  entity    String   @db.VarChar(100)
+  entityId  String?  @db.VarChar(100)
+  before    Json?
+  after     Json?
+  reason    String?  @db.VarChar(1000)
+  requestId String?  @db.VarChar(100)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  actor     User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId, createdAt])
+  @@index([actorId, createdAt])
+  @@map("audit_logs")
+}

@@ -1,0 +1,169 @@
+{
+  "evidence_type": "PHASE0_DOCUMENT_DECISION_UPDATE",
+  "generated_at": "2026-10-21T14:22:27+07:00",
+  "finalized_at": "2026-10-21T14:24:07+07:00",
+  "timezone": "Asia/Ho_Chi_Minh",
+  "repository_baseline_commit": "2f54fa18bf7d8d7423ab679e9d0319cf3b11c864",
+  "scope": {
+    "documentation_only": true,
+    "engine_created": false,
+    "backend_created": false,
+    "frontend_created": false,
+    "production_deployed": false,
+    "phase_transition_performed": false
+  },
+  "baseline_observation": {
+    "docs_15_present_before_update": false,
+    "docs_16_present_before_update": false,
+    "note": "The cloned GitHub baseline contained documents through 14_VERIFICATION_REPORT.json. Document 15 was created during this update; no pre-existing document 16 was modified or reconstructed."
+  },
+  "business_decisions": {
+    "expected": [
+      "DEC-001",
+      "DEC-002",
+      "DEC-003",
+      "DEC-004",
+      "DEC-005",
+      "DEC-006"
+    ],
+    "decision_headings_found": 6,
+    "confirmation_date_occurrences": 6,
+    "confirmer_occurrences": 6,
+    "confirmed": [
+      "DEC-001",
+      "DEC-004",
+      "DEC-005",
+      "DEC-006"
+    ],
+    "partially_confirmed": [
+      "DEC-002",
+      "DEC-003"
+    ]
+  },
+  "test_matrix": {
+    "test_rows": 35,
+    "unique_test_ids": 35,
+    "first_id": "T01",
+    "last_id": "T35",
+    "not_run_rows": 35,
+    "pass_rows": 0
+  },
+  "document_checks": {
+    "required_documents_expected": 9,
+    "required_documents_present": 9,
+    "strict_utf8_decode_failures": 0,
+    "git_diff_check_exit_code": 0,
+    "stale_claim_search_result": "No contradictory pre-decision claim found in the updated documents. One matching statement correctly says multiple rows must not be auto-merged.",
+    "software_tests": "NOT_RUN",
+    "real_xlsx_audit": "BLOCKED_MISSING_SX_XLSX",
+    "phase1_code_audit": "BLOCKED_NOT_PROVIDED_OR_CONFIRMED_ABSENT"
+  },
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "change": "modified",
+      "bytes": 4347,
+      "sha256": "002bd63e705640f7d2eb0154e61789411da022689dc8637ec7fe025e566bedcc"
+    },
+    {
+      "path": "README.md",
+      "change": "modified",
+      "bytes": 773,
+      "sha256": "7252becd64e9637616a49e227aa23cd2511363e68c8b48f7b674f5e4df8bec8e"
+    },
+    {
+      "path": "docs/01_BUSINESS_REQUIREMENTS.md",
+      "change": "modified",
+      "bytes": 7296,
+      "sha256": "aac85627c8d67080e337737f5c812b557a8337fa4bd24150ebde604c3b935cd1"
+    },
+    {
+      "path": "docs/02_ATTENDANCE_RULES.md",
+      "change": "modified",
+      "bytes": 7514,
+      "sha256": "f549b0b5d664363927687b48617e197c8f669dfb64656d31e969fca40f179299"
+    },
+    {
+      "path": "docs/03_SYSTEM_ARCHITECTURE.md",
+      "change": "modified",
+      "bytes": 3826,
+      "sha256": "99fa46d40ae921940c46fefbc00ec620e0575882c0cc92f9bdb6311e7495f505"
+    },
+    {
+      "path": "docs/04_DATABASE_DESIGN.md",
+      "change": "modified",
+      "bytes": 7316,
+      "sha256": "d1f474e808573677bc398cc8735c7408f6d99b4f57cfcc2a27688f590fb13ba2"
+    },
+    {
+      "path": "docs/05_API_SPECIFICATION.md",
+      "change": "modified",
+      "bytes": 4152,
+      "sha256": "40e16f608dd2625ca1fdea3a432edd2514b8de8bac46229254a0329500c081c9"
+    },
+    {
+      "path": "docs/06_UI_UX_SPECIFICATION.md",
+      "change": "modified",
+      "bytes": 2950,
+      "sha256": "f3cf3d9c0900c62708c5a5d58b7d8f613ad0f48a7ac10c28cf630348e10d6e67"
+    },
+    {
+      "path": "docs/07_WORKFLOW.md",
+      "change": "modified",
+      "bytes": 4046,
+      "sha256": "8afe5807463e18c9aa410d99d569b11b98c9fcafac4d578613b76f144f955af7"
+    },
+    {
+      "path": "docs/08_TEST_CASES.md",
+      "change": "modified",
+      "bytes": 7397,
+      "sha256": "d40d348eeb1bd86bbc768759e2081eeb46ce78868fe989876788ef3f23514518"
+    },
+    {
+      "path": "docs/09_UAT_CHECKLIST.md",
+      "change": "modified",
+      "bytes": 3515,
+      "sha256": "e3d072583ea1581e244b629dea6524ea57301f6b9f8ed83f5767fea55c14e774"
+    },
+    {
+      "path": "docs/12_OPEN_QUESTIONS.md",
+      "change": "modified",
+      "bytes": 5969,
+      "sha256": "601980c4c635f9ccfbcb8c4d41852be396bb77438957996eafd269a0cf4cd41a"
+    },
+    {
+      "path": "docs/13_PROGRESS_REPORT.md",
+      "change": "modified",
+      "bytes": 5997,
+      "sha256": "0042919da1423b02d439e4d41f3b5c2c45f26e3bda80527baac99b3b2c93ae94"
+    },
+    {
+      "path": "docs/15_PHASE0_REAUDIT.md",
+      "change": "created",
+      "bytes": 5964,
+      "sha256": "2c090bed4e263e53b68cd1d628acdffeddfcbac403a775419bf831c4160699e8"
+    },
+    {
+      "path": "docs/17_PHASE0_BUSINESS_DECISIONS.md",
+      "change": "created",
+      "bytes": 8827,
+      "sha256": "a68a087dd06430ad40415aa33bb890dece7ca024c1112b62c87a8fd4dc31ca95"
+    }
+  ],
+  "preserved_prior_evidence": {
+    "path": "docs/14_VERIFICATION_REPORT.json",
+    "bytes": 5805,
+    "sha256": "5eb9e4d052f59a5fec06600cf45486932016c7570a6789ec820c41e866ee0c0f",
+    "modified": false
+  },
+  "readiness": {
+    "READY_FOR_ENGINE_DEVELOPMENT": "YES_WITH_GUARDRAILS",
+    "READY_FOR_REAL_DATA_VALIDATION": "NO",
+    "PHASE0_ACCEPTED": "NO_AWAITING_PROJECT_OWNER_ACCEPTANCE"
+  },
+  "limitations": [
+    "No SX.xlsx was available, so no real sheet, column, timestamp, duplicate, or exception audit was performed.",
+    "No Phase 1 application code or runnable tests were available.",
+    "Document validation does not constitute business UAT or software test evidence."
+  ]
+}

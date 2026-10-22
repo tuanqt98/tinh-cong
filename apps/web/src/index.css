@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #14213d;
+  background: #f5f7fb;
+  font-family: Inter, 'Segoe UI', Arial, sans-serif;
+  font-synthesis: none;
+  --primary: #1769d2;
+  --primary-hover: #1158b7;
+  --sidebar: #14213d;
+  --background: #f5f7fb;
+  --surface: #ffffff;
+  --border: #e2e8f0;
+  --text-primary: #14213d;
+  --text-secondary: #64748b;
+  --success: #16a34a;
+  --warning: #f59e0b;
+  --error: #dc2626;
+  --radius: 12px;
+}
+
+html {
+  background: var(--background);
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 48% 0%, rgba(219, 234, 254, 0.34), transparent 34rem),
+    var(--background);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+select,
+input[type='checkbox'] {
+  accent-color: var(--primary);
+}

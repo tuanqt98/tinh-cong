@@ -1,5 +1,5 @@
 # 03 – Kiến trúc đề xuất
-Trạng thái: thiết kế sơ bộ, chưa triển khai. Giữ stack người dùng ưu tiên.
+Trạng thái: kiến trúc đã được triển khai cho môi trường development. Cập nhật 21/10/2026 theo DEC-001–DEC-006; chưa triển khai production và các luồng phụ thuộc quyết định OPEN vẫn fail-closed.
 
 ## Thành phần
 React + TypeScript + Tailwind: giao diện HR/portal.
@@ -22,17 +22,17 @@ flowchart LR
 ```
 
 ## Phân lớp và truy vết
-Import parser → validation → normalized input → engine → versioned calculations → immutable timesheet snapshot → publication.
+Import parser → validation nhiều lỗi → kiểm tra trùng → normalized input có bằng chứng ngày ca/timestamp → engine → versioned calculations → immutable timesheet snapshot → publication.
 Dữ liệu raw và file gốc giữ nguyên; correction overlay chỉ tạo input mới cho calculation revision mới.
 Ghi hash đầu vào, dòng/sheet nguồn, engine/rule version; xuất PDF/Excel từ cùng snapshot.
 Cấu trúc dự kiến: apps/web, apps/api, packages/attendance-engine, prisma, docs, tests; chưa tạo mã các thư mục này.
 
 ## Giao dịch và đồng thời
-Import confirm, adjustment+recalculation, chuyển trạng thái kỳ và tạo snapshot phải nguyên tử ở DB.
+Import confirm, adjustment+recalculation, chuyển trạng thái kỳ và tạo snapshot phải nguyên tử ở DB. Nếu detector phát hiện trùng trong file hoặc dữ liệu đã lưu, toàn bộ import bị từ chối; không ghi raw/calculation một phần, chỉ giữ metadata/audit attempt.
 Kiểm tra period state/version ngay trong transaction; dùng optimistic version, khóa DB/isolation phù hợp và retry conflict có giới hạn.
 Worker phải kiểm lại phiên bản/kỳ trước commit; job cũ không được ghi lên kỳ đã khóa.
 Không giữ transaction mở trong lúc đọc file hoặc render PDF.
-Idempotency key ngăn request lặp tạo thêm import/publication; hash file không đủ để nhận diện dòng trùng.
+Idempotency key ngăn request lặp tạo thêm import/publication; hash file không đủ để nhận diện dòng trùng. Khóa trùng nghiệp vụ chỉ được chốt sau audit dữ liệu thực.
 
 ## Khả thi
 Đề xuất modular monolith để vận hành nội bộ và kiểm toán tập trung. Quy mô 1.000 nhân viên chưa được benchmark.

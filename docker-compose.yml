@@ -1,0 +1,74 @@
+services:
+  db:
+    image: postgres:16.4-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: Asia/Ho_Chi_Minh
+    ports:
+      - '127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/api.Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      TZ: Asia/Ho_Chi_Minh
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-7d}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
+      DUPLICATE_KEY_FIELDS: ${DUPLICATE_KEY_FIELDS:-}
+      WORKFLOW_ENABLED: ${WORKFLOW_ENABLED:-false}
+      SOURCE_MASTER_PROVISIONING_ENABLED: ${SOURCE_MASTER_PROVISIONING_ENABLED:-false}
+      UPLOAD_DIR: /app/storage/uploads
+      EXPORT_DIR: /app/storage/exports
+    ports:
+      - '127.0.0.1:${COMPOSE_API_PORT:-3000}:3000'
+    volumes:
+      - source_files:/app/storage/uploads
+      - export_files:/app/storage/exports
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/api/v1/health']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/web.Dockerfile
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:${COMPOSE_WEB_PORT:-8080}:80'
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1/healthz']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+  source_files:
+  export_files:

@@ -1,0 +1,7 @@
+node_modules
+dist
+coverage
+pnpm-lock.yaml
+docs/00_SOURCE_REQUIREMENTS.txt
+docs/14_VERIFICATION_REPORT.json
+docs/18_PHASE0_DECISION_UPDATE_EVIDENCE_20261021T142227+0700.json
