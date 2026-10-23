@@ -396,7 +396,14 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
     }
   });
 
-  it('calculates from source shift without creating a work schedule', async () => {
+  it('prepares approved rule/period coverage and calculates without creating a work schedule', async () => {
+    const ca1Rule = await prisma.shiftRule.findFirstOrThrow({
+      where: { shift: { code: 'CA1' }, version: 1 },
+    });
+    const originalEffectiveFrom = ca1Rule.effectiveFrom;
+    const existingSourcePeriod = await prisma.attendancePeriod.findUnique({
+      where: { year_month: { year: 2026, month: 9 } },
+    });
     const importRecord = await prisma.attendanceImport.create({
       data: {
         originalName: 'synthetic-source-shift.xlsx',
@@ -416,7 +423,7 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
         employeeCode: 'SYN-001',
         employeeName: 'Nhân viên synthetic 001',
         departmentName: 'Phòng sản xuất mẫu',
-        attendanceDateRaw: '2026-10-10',
+        attendanceDateRaw: '2026-09-10',
         checkInRaw: '08:00',
         checkOutRaw: '17:00',
         shiftNameRaw: 'Ca1',
@@ -431,7 +438,7 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
         employeeCode: 'SYN-MISSING-EMPLOYEE',
         employeeName: 'Nhân viên chưa có hồ sơ',
         departmentName: 'Phòng sản xuất mẫu',
-        attendanceDateRaw: '2026-10-10',
+        attendanceDateRaw: '2026-09-10',
         checkInRaw: '08:00',
         checkOutRaw: '17:00',
         shiftNameRaw: 'Ca1',
@@ -442,7 +449,7 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
     try {
       await expect(
         prisma.workSchedule.count({
-          where: { employeeId: ownEmployeeId, shiftDate: new Date('2026-10-10T00:00:00.000Z') },
+          where: { employeeId: ownEmployeeId, shiftDate: new Date('2026-09-10T00:00:00.000Z') },
         }),
       ).resolves.toBe(0);
 
@@ -463,8 +470,19 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
         1,
       );
       await expect(
+        prisma.attendancePeriod.count({ where: { year: 2026, month: 9, status: 'DRAFT' } }),
+      ).resolves.toBe(1);
+      await expect(
+        prisma.shiftRule.count({
+          where: {
+            id: ca1Rule.id,
+            effectiveFrom: new Date('2026-09-10T00:00:00.000Z'),
+          },
+        }),
+      ).resolves.toBe(1);
+      await expect(
         prisma.workSchedule.count({
-          where: { employeeId: ownEmployeeId, shiftDate: new Date('2026-10-10T00:00:00.000Z') },
+          where: { employeeId: ownEmployeeId, shiftDate: new Date('2026-09-10T00:00:00.000Z') },
         }),
       ).resolves.toBe(0);
     } finally {
@@ -478,6 +496,13 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
         where: { entity: 'AttendanceImport', entityId: importRecord.id },
       });
       await prisma.attendanceImport.delete({ where: { id: importRecord.id } });
+      await prisma.shiftRule.update({
+        where: { id: ca1Rule.id },
+        data: { effectiveFrom: originalEffectiveFrom },
+      });
+      if (!existingSourcePeriod) {
+        await prisma.attendancePeriod.deleteMany({ where: { year: 2026, month: 9 } });
+      }
     }
   });
 });

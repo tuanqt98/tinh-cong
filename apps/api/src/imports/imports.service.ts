@@ -435,6 +435,7 @@ export class ImportsService {
       new Map([['EMPLOYEE_NOT_FOUND', new Set(linkedRows.map((row) => row.id))]]),
     );
 
+    await this.ensureCalculationCoverage(id, linkedRows, user.id);
     const calculationSummary = await this.processLinkedRows(linkedRows, existingKeys, user.id);
     const summary = {
       rawRows: record.rawRows.length,
@@ -928,6 +929,80 @@ export class ImportsService {
     return { missingSchedules: 0, missingTimestampEvidence, calculatedRows };
   }
 
+  private async ensureCalculationCoverage(
+    importId: string,
+    rows: Array<RawRow & { employeeId: string }>,
+    actorId: string,
+  ) {
+    const datesByShift = new Map<SupportedShiftCode, string[]>();
+    for (const raw of rows) {
+      const shiftCode = this.sourceShiftCode(raw.shiftNameRaw);
+      if (!shiftCode || !this.isIsoDate(raw.attendanceDateRaw)) continue;
+      const dates = datesByShift.get(shiftCode) ?? [];
+      dates.push(raw.attendanceDateRaw);
+      datesByShift.set(shiftCode, dates);
+    }
+    if (!datesByShift.size) return;
+
+    const periodKeys = [
+      ...new Set([...datesByShift.values()].flat().map((date) => date.slice(0, 7))),
+    ].sort();
+    await this.prisma.$transaction(
+      async (tx) => {
+        const shifts = await tx.shift.findMany({
+          where: { code: { in: [...datesByShift.keys()] }, active: true },
+          select: { id: true, code: true },
+        });
+        const shiftByCode = new Map(shifts.map((shift) => [shift.code, shift]));
+        const extendedShiftRules: string[] = [];
+        for (const [shiftCode, dates] of datesByShift) {
+          const shift = shiftByCode.get(shiftCode);
+          if (!shift) {
+            throw new ConflictException({
+              code: 'APPROVED_SHIFT_NOT_AVAILABLE',
+              message: `Chưa có ca ${shiftCode} đang hoạt động để xử lý dữ liệu nguồn.`,
+            });
+          }
+          dates.sort();
+          const coverage = await this.ensureApprovedRuleCoverage(
+            tx,
+            shift.id,
+            shiftCode,
+            dates[0]!,
+            dates.at(-1)!,
+          );
+          if (coverage === 'EXTENDED') extendedShiftRules.push(shiftCode);
+        }
+
+        const periods = await tx.attendancePeriod.createMany({
+          data: periodKeys.map((key) => ({
+            year: Number(key.slice(0, 4)),
+            month: Number(key.slice(5, 7)),
+          })),
+          skipDuplicates: true,
+        });
+        if (extendedShiftRules.length || periods.count) {
+          await tx.auditLog.create({
+            data: {
+              actorId,
+              action: 'IMPORT_CALCULATION_COVERAGE_PREPARED',
+              entity: 'AttendanceImport',
+              entityId: importId,
+              reason:
+                'Mở rộng đúng bộ quy tắc Ca1/Ca3 đã duyệt và tạo kỳ DRAFT cho ngày nguồn; không tạo master nhân viên/phòng ban.',
+              after: {
+                extendedShiftRules,
+                createdPeriods: periods.count,
+                periodKeys,
+              },
+            },
+          });
+        }
+      },
+      { maxWait: 10_000, timeout: 60_000 },
+    );
+  }
+
   private async ensureApprovedRuleCoverage(
     tx: Prisma.TransactionClient,
     shiftId: string,
@@ -956,7 +1031,7 @@ export class ImportsService {
         (!rule.effectiveTo || rule.effectiveTo >= to) &&
         matchesDefinition(rule),
     );
-    if (coveringRule) return;
+    if (coveringRule) return 'UNCHANGED' as const;
 
     const extendableRule = rules.find(
       (rule) =>
@@ -986,6 +1061,7 @@ export class ImportsService {
       where: { id: extendableRule.id },
       data: { effectiveFrom: from },
     });
+    return 'EXTENDED' as const;
   }
 
   private approvedSourceTimestamps(raw: RawRow, shiftCode: SupportedShiftCode) {

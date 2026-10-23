@@ -20,7 +20,7 @@ Build và runtime cục bộ đã được chứng minh, nhưng không được 
 - Volume riêng cho PostgreSQL, source imports và exports.
 - Nginx có giới hạn upload 10 MB, security headers và SPA fallback.
 - Web tự refresh access token theo phiên; refresh không hợp lệ/hết hạn sẽ xóa phiên và yêu cầu đăng nhập lại.
-- Import history/raw rows hiển thị trên web; pipeline idempotent chuyển cảnh báo sang ngoại lệ và chỉ tính khi có master + lịch + timestamp/evidence đầy đủ.
+- Import history/raw rows hiển thị trên web; pipeline idempotent chuyển cảnh báo sang ngoại lệ và chỉ tính khi có master + `Ca1`/`Ca3` nguồn + timestamp/evidence đầy đủ.
 - Tạo hồ sơ nhân viên/phòng ban từ file nguồn bị khóa mặc định bằng `SOURCE_MASTER_PROVISIONING_ENABLED=false`; backend trả 409 và UI không cho kích hoạt khi chưa có decision evidence. DEC-007 cho phép dùng `Tên ca` nguồn trực tiếp nên không còn provision lịch phân ca.
 - Ngoại lệ, attendance, publication và dashboard áp employee scope ở backend; HR/MANAGER không có scope trả rỗng/fail-closed.
 - Màn Import Excel đã được redesign và kiểm chứng responsive bằng Playwright tại 1536×1024, 1440×900 và 1280×800; preview/confirm/history vẫn dùng API và guard hiện hữu.
@@ -29,6 +29,8 @@ Build và runtime cục bộ đã được chứng minh, nhưng không được 
 - Preview nhân viên đếm số dòng dữ liệu đã đọc thay vì chỉ đếm dòng hợp lệ; lỗi phòng ban nêu rõ giá trị nguồn chưa có master. Đây chỉ là cải thiện chẩn đoán, không nới guard hoặc tự tạo phòng ban. Các tên nguồn như `AKO`, `Cơ điện, tạp vụ` vẫn cần được quản trị tạo/map vào master trước khi confirm import.
 - ADMIN có dialog quản lý phòng ban trên màn nhân viên để tạo master một cách tường minh trước khi import; quyền tạo vẫn được kiểm tra ở backend. Tính năng này không tự đọc/tạo danh mục từ file và không thay đổi `SOURCE_MASTER_PROVISIONING_ENABLED=false`.
 - Processing import trả danh sách mã nhân viên thiếu và UI cảnh báo số mã/số dòng, kèm lối tắt sang Quản lý nhân viên. Phần dữ liệu đủ hồ sơ vẫn xử lý; phần thiếu tạo ngoại lệ blocking và có thể phục hồi khi chạy lại sau khi bổ sung master. Không có auto-provision ngầm.
+- Khi ngày nguồn nằm trước coverage development hiện tại, pipeline chỉ được mở rộng rule Ca1/Ca3 hiện hữu nếu toàn bộ định nghĩa khớp quyết định đã duyệt và không chồng lấn, đồng thời tạo kỳ nguồn ở trạng thái DRAFT. Thiếu/khác rule vẫn fail-closed; không tạo work schedule hoặc source master. Integration nguồn tháng 09 trên DB mới xác nhận hành vi này.
+- Development `SX.xlsx` hiện có 1.726 calculation `VALID` cho 83/92 mã đã có master: 0 tier mismatch, 0 thời gian âm, 0 normalization thiếu evidence và 0 work schedule. Chín mã/270 dòng còn thiếu cùng các dòng ca/evidence/multiple-row không hợp lệ vẫn là ngoại lệ blocking; kết quả chưa có expected HR/UAT nên không được phát hành.
 - ESLint flat config hiện kiểm tra TypeScript/React/Node thật với 0 warning; PATCH nhân viên không có trường hồ sơ hợp lệ bị chặn HTTP 400 trước khi tạo history/audit rỗng. Gate source mới nhất đạt typecheck/build, 31 engine, 26 API, 8 PostgreSQL integration và 12 E2E.
 
 ## Cài đặt staging/local Windows
@@ -73,7 +75,7 @@ Sau restore phải kiểm tra migration, số bản ghi, khóa ngoại, login v�
 
 ## Cổng bắt buộc trước production
 
-- Duyệt cách tạo/nạp master cho 92 mã nhân viên/12 phòng ban và expected HR; `Tên ca` nguồn đã được duyệt thay lịch phân ca theo DEC-007. Đối chiếu `SX.xlsx` thực sau khi liên kết master; không dùng kết quả development cũ làm oracle.
+- Nạp/xác minh 9 master nhân viên còn thiếu và expected độc lập của HR; `Tên ca` nguồn đã được duyệt thay lịch phân ca theo DEC-007. Đối chiếu toàn bộ `SX.xlsx` sau khi đủ master; không dùng 1.726 kết quả development hiện tại làm oracle.
 - Chốt tiêu chí ngày checkout DEC-002 và quy trình file sửa/file nhiều kỳ còn mở của DEC-003; khóa trùng đã được duyệt.
 - Chốt Q10/Q11, quyền duyệt/chốt/phát hành và quy trình chỉnh sau khóa.
 - Hoàn tất UAT, mẫu PDF/logo, retention, backup location/RPO/RTO và staging security review.
@@ -96,3 +98,5 @@ Ngày 22/10/2026, `docker compose build api web` hoàn tất với API digest `s
 Sau mốc này, source được bổ sung ESLint và guard PATCH nhân viên. Ngày 22/10/2026, `docker compose config` tiếp tục render đúng ba guard, nhưng Compose build, build trực tiếp API qua BuildKit và lần thử legacy builder đều treo không log/không hoàn tất trong khoảng theo dõi; tiến trình CLI/buildx do các lần thử tạo đã được kết thúc. Vì vậy API vẫn dùng image checkpoint cũ và chưa có bằng chứng container cho guard PATCH mới.
 
 Ngày 23/10/2026, artifact API/web mới đã được chép vào writable layer của container local hiện tại và restart sau khi Docker commit artifact bị treo. DB/API/web cuối cùng đều healthy; API trực tiếp/proxy và Nginx đều HTTP 200. Smoke Chromium có xác thực tại `8180/employees` xác nhận đúng năm cột, có Import/Tải mẫu, dialog mở được và template tải về đúng bốn header; ảnh `docs/ui-evidence/employee-management-import-restored.png`. Image tag vẫn là checkpoint cũ, nên cách cập nhật runtime này chưa thay thế bằng chứng build Dockerfile tái lập; production gate vẫn yêu cầu normal image build.
+
+Cùng ngày, trước khi xử lý lại `SX.xlsx`, backup SQL được tạo với SHA-256 `21722B107EAF2EA952DAEB2CA98AE653BE9D54392754DF09C712BFC2B1328FA6`. Artifact API có coverage tháng nguồn đã được chép vào writable layer; vòng health đầu hết thời gian trong lúc bootstrap, sau đó artifact marker và ba endpoint health đều PASS, container healthy. Pipeline chỉ được gọi sau health và tạo 1.726 calculation hợp lệ; image tag vẫn không phải bằng chứng build Dockerfile tái lập.

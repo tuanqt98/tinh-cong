@@ -37,6 +37,8 @@ Trạng thái tổng thể: **`DEVELOPMENT_COMPLETE_WITH_BLOCKERS`**. Không pro
 - Preview import nhân viên nay đếm đúng số dòng đã đọc kể cả khi mapping phòng ban lỗi và trả message kèm giá trị nguồn. Regression với `AKO` đạt `rowCount=1`, `canConfirm=false`; integration PostgreSQL 8/8 trên DB mới và runtime preview-only qua Nginx PASS. Development DB vẫn chỉ có `SYN-FACTORY`; không tự provision các phòng ban `AKO`, `Cơ điện, tạp vụ` khi guard đang tắt.
 - ADMIN nay có nút `Quản lý phòng ban` ngay trên màn nhân viên để xem danh mục và tạo master mã/tên trước khi import. E2E tạo `AKO` trên mock API và integration PostgreSQL xác nhận ADMIN được tạo, EMPLOYEE bị 403; toàn bộ gate vẫn 77 PASS. Runtime local đã cập nhật, dialog smoke PASS và không ghi dữ liệu thử vào development DB. Đây là thao tác thủ công có chủ đích, không bật source-master auto-provision.
 - Khi xử lý attendance import có hồ sơ nhân viên thiếu, API nay trả danh sách mã duy nhất và UI cảnh báo rõ số mã/số dòng, hiển thị từng mã cùng nút mở Quản lý nhân viên. Hệ thống xử lý phần đủ hồ sơ, không tự tạo phần thiếu và cho phép chạy xử lý lại sau khi người dùng bổ sung. Gate vẫn 77 PASS; runtime smoke cảnh báo dùng request intercept nên 2.765 raw development không bị thay đổi.
+- Pipeline nay tự chuẩn bị coverage kỹ thuật cho ngày nguồn: chỉ mở rộng rule Ca1/Ca3 nếu rule hiện hữu khớp tuyệt đối định nghĩa đã duyệt và không chồng lấn, đồng thời tạo kỳ tương ứng ở trạng thái DRAFT. Regression nguồn tháng 09 trên DB mới PASS; không tạo lịch phân ca, nhân viên hay phòng ban.
+- `SX.xlsx` đã được chạy lại sau backup development. Kết quả: 2.495 dòng liên kết, 1.726 normalization/calculation đều `VALID` (CA1 1.116, CA3 610), 0 tier mismatch, 0 thời gian âm, 0 evidence thiếu trong normalization và 0 work schedule. Chín mã/270 dòng còn thiếu master vẫn OPEN; 1.726 lỗi rule cũ đã được revalidation sang RESOLVED. Đây là validation development, chưa phải expected HR/UAT.
 
 Gate của mốc Quản lý nhân viên ngày 22/10/2026: lint command exit 0 nhưng repo chưa có script lint ở workspace; typecheck PASS; build PASS; unit/service 56/56 PASS; PostgreSQL integration 8/8 PASS trên DB mới; Playwright 12/12 PASS. Tổng 76 PASS, 0 FAIL, 0 SKIP ở lần chạy cuối. Dữ liệu test/visual là synthetic.
 
@@ -66,14 +68,14 @@ Chi tiết và các lần lỗi đã sửa: [TEST_REPORT](file:///D:/chamCong/do
 
 ## Blocker
 
-1. `SX.xlsx` đã `ACCEPTED` với 2.765 raw rows. Dùng `Tên ca` không còn bị chặn bởi lịch phân ca, nhưng 92 mã nguồn chưa có master tương ứng; hiện vẫn 0 normalization/calculation và không tự tạo hồ sơ nhân viên.
+1. `SX.xlsx` đã `ACCEPTED` với 2.765 raw rows và đã tạo 1.726 calculation hợp lệ cho 83/92 mã nguồn có master. Còn 9 mã/270 dòng thiếu hồ sơ, 694 dòng ca không hỗ trợ, 65 dòng thiếu evidence timestamp và 10 dòng nhiều bản ghi cùng nhân viên/ngày ca; không tự provision hay tính các dòng bị chặn.
 2. DEC-002 đã đủ cho trường hợp `Ca3` nguồn hiện tại theo DEC-007; các trường hợp checkout khác ngoài tiêu chí đã chốt vẫn OPEN.
 3. Q10/Q11 và quyền/luồng chốt, phát hành, chỉnh sau khóa chưa duyệt.
 4. Thiếu mẫu PDF/logo chính thức, UAT và staging security/load theo SLA.
 
 ## Việc tiếp theo
 
-1. Chủ dự án quyết định có dùng `Mã nhân viên` + `Tên nhân viên` + `Phòng ban` trong file để tạo 92 hồ sơ master hay sẽ cung cấp master riêng. Không cần cung cấp lịch phân ca.
+1. Khi sẵn sàng, Chủ dự án/HR nạp thủ công 9 hồ sơ còn thiếu (`NV00084`, `NV00100`, `NV00115`, `NV00129`, `NV00200`, `NV00209`, `NV00210`, `NV00212`, `NV00227`) rồi chạy xử lý lại. Hệ thống không tự tạo master và không cần lịch phân ca.
 2. HR cung cấp bộ dữ liệu ẩn danh + expected và chốt các trường hợp còn lại của DEC-002; DEC-003 còn quy trình file sửa/file nhiều kỳ.
 3. Chủ dự án duyệt Q10/Q11; sau đó mới viết/bật phần transition/publish tương ứng.
 4. Chạy đối chiếu dữ liệu thật, UAT, PDF hàng loạt và tải đồng thời trên staging.
@@ -82,11 +84,12 @@ Chi tiết và các lần lỗi đã sửa: [TEST_REPORT](file:///D:/chamCong/do
 
 Không có production deployment hoặc thông báo đến nhân viên thật trong checkpoint này.
 
-## Checkpoint Docker local mới nhất — 22/10/2026
+## Checkpoint Docker local mới nhất — 23/10/2026
 
 - Đã rebuild và recreate API/Web từ source redesign Quản lý nhân viên; image digest local lần lượt là `sha256:5a6fdb096939...` và `sha256:c68b0980ab7c...`.
 - DB/API/Web healthy; migration deploy không còn migration chờ; health API trực tiếp, API qua proxy và Nginx đều HTTP 200.
 - Login và API danh sách/thống kê nhân viên PASS. Browser smoke trên cổng `8180` xác nhận giao diện mới hiển thị đầy đủ và không có API response lỗi.
-- Database vẫn chỉ có 1 employee master synthetic `SYN-001`. Việc 92 mã từ `SX.xlsx` chưa xuất hiện trong danh sách là đúng guard: không tự provision master khi `SOURCE_MASTER_PROVISIONING_ENABLED=false`.
+- Database development hiện có 123 employee và 19 department đang hoạt động; 83/92 mã nguồn `SX.xlsx` đã khớp master do người dùng nạp, còn 9 mã không được tự provision khi `SOURCE_MASTER_PROVISIONING_ENABLED=false`.
+- Backup trước xử lý có SHA-256 `21722B107EAF2EA952DAEB2CA98AE653BE9D54392754DF09C712BFC2B1328FA6`. Artifact API mới được cập nhật vào writable layer và restart; sau bootstrap DB/API/web healthy, health trực tiếp/proxy/Nginx đều HTTP 200. Image tag vẫn là checkpoint cũ nên Dockerfile build tái lập còn PARTIAL.
 - Rebuild toàn bộ source hardening vẫn chưa hoàn tất qua Compose/Dockerfile API do Docker CLI treo; các tiến trình do lần build tạo đã được dừng. Riêng web UI tinh gọn hiện đã chạy bằng image artifact mới `sha256:f2f77e63dc9...`; API vẫn là image checkpoint `sha256:5a6fdb096939...`, vì vậy bằng chứng container toàn stack vẫn là PARTIAL.
 - Trạng thái tổng thể không đổi: `DEVELOPMENT_COMPLETE_WITH_BLOCKERS`, không production-ready.

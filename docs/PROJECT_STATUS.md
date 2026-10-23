@@ -15,7 +15,7 @@ Hệ thống được bảo vệ bằng các chốt chặn an toàn (fail-closed
 | -------------------------------- | ---------------------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | **Engine Unit Tests**            | `pnpm.cmd test:run` (engine)                         | **31/31 PASS** (2 files)        | Tính công số nguyên giây, bảo toàn tier, Ca 1/Ca 3, đi muộn/về sớm độc lập                           |
 | **API Unit & Service Tests**     | `pnpm.cmd test:run` (api)                            | **26/26 PASS** (6 files)        | Có guard PATCH nhân viên rỗng, regression confirm 2.765 dòng, source-shift, RBAC/scope và export     |
-| **PostgreSQL Integration Tests** | migration + seed DB mới; `pnpm.cmd test:integration` | **8/8 PASS** (1 file)           | PostgreSQL 16 thật; source-shift và quản lý/import nhân viên an toàn                                 |
+| **PostgreSQL Integration Tests** | migration + seed DB mới; `pnpm.cmd test:integration` | **8/8 PASS** (1 file)           | PostgreSQL 16 thật; coverage rule/kỳ DRAFT tháng nguồn và quản lý/import nhân viên an toàn           |
 | **Browser E2E Tests**            | `pnpm.cmd test:e2e`                                  | **12/12 PASS** (Chromium)       | Màn nhân viên 4 trường + thao tác, import/template, responsive và visual QA Import Excel             |
 | **ESLint**                       | `pnpm.cmd lint`                                      | **PASS, 0 warning**             | Flat config kiểm tra TypeScript/React/Node thật; không còn lint no-op                                |
 | **TypeScript Typecheck**         | `pnpm.cmd typecheck`                                 | **PASS** (5 workspace packages) | `@tinh-cong/attendance-engine`, `shared`, `ui`, `api`, `web`                                         |
@@ -39,6 +39,9 @@ Màn Import Excel đã được xây dựng lại theo mockup: sidebar/topbar d�
 3. **Confirm 2.765 dòng trả HTTP 500 (`Prisma P2028`)**:
    - _Nguyên nhân_: `createMany` vượt timeout 5 giây của interactive transaction; transaction rollback, không có raw row ghi dở.
    - _Khắc phục_: Chuyển sang batch transaction nguyên tử, thêm regression 2.765 dòng và deploy lại API image local. Full build, 55 unit/service, 5 integration và 9 E2E đều PASS.
+4. **Dữ liệu tháng 09 không tạo calculation dù đã có master**:
+   - _Nguyên nhân_: seed development chỉ có kỳ tháng 10 và rule Ca1/Ca3 bắt đầu 09/10/2026; 1.726 dòng bị `SHIFT_RULE_NOT_FOUND` đúng fail-closed.
+   - _Khắc phục_: pipeline chỉ mở rộng rule hiện hữu khớp tuyệt đối định nghĩa đã duyệt, không chồng lấn và tạo kỳ tháng nguồn ở trạng thái DRAFT. Regression integration tháng 09 PASS; chạy lại development tạo 1.726 calculation `VALID`, 0 tier mismatch, 0 thời gian âm, 0 thiếu evidence và 0 work schedule.
 
 ## 4. Trạng thái các Guard nghiệp vụ bắt buộc
 
@@ -49,13 +52,13 @@ Màn Import Excel đã được xây dựng lại theo mockup: sidebar/topbar d�
 
 ## 5. Danh sách Blocker cần quyết định / dữ liệu từ bên ngoài
 
-| STT | Mã / Hạng mục   | Trạng thái                             | Yêu cầu / Câu hỏi còn mở                                                                                                                                     |
-| --- | --------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1   | `Q01 / SX.xlsx` | **PARTIAL/BLOCKED**                    | File đã ACCEPTED 2.765 raw rows. Không cần lịch phân ca; còn cần quyết định tạo 92 hồ sơ nhân viên/12 phòng ban từ file hay nạp master riêng và expected HR. |
-| 2   | `DEC-002 / Q04` | **PARTIALLY_CONFIRMED**                | Trường hợp `Ca3` hiện tại đã có tiêu chí D+1 theo DEC-007; các dạng checkout khác thiếu căn cứ vẫn `NEEDS_REVIEW`.                                           |
-| 3   | `DEC-003 / Q05` | **PARTIALLY_CONFIRMED; KEY CONFIRMED** | Đã cấu hình `employeeCode,attendanceDate,shiftName`; còn mở quy trình file sửa/file nhiều kỳ.                                                                |
-| 4   | `Q10 / Q11`     | **OPEN**                               | Cần duyệt luồng phê duyệt (ai duyệt, tách vai trò lập/duyệt, điều chỉnh sau khóa). Hiện tại: tắt toàn bộ workflow.                                           |
-| 5   | `Q15 / PDF`     | **PARTIAL**                            | Cần mẫu bảng công chính thức, logo, tiêu đề công ty để thay thế watermark development.                                                                       |
+| STT | Mã / Hạng mục   | Trạng thái                             | Yêu cầu / Câu hỏi còn mở                                                                                                                           |
+| --- | --------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `Q01 / SX.xlsx` | **PARTIAL/BLOCKED**                    | File đã ACCEPTED 2.765 raw rows; 83/92 mã đã có master và tạo 1.726 calculation hợp lệ. Còn 9 mã/270 dòng thiếu master và chưa có expected HR/UAT. |
+| 2   | `DEC-002 / Q04` | **PARTIALLY_CONFIRMED**                | Trường hợp `Ca3` hiện tại đã có tiêu chí D+1 theo DEC-007; các dạng checkout khác thiếu căn cứ vẫn `NEEDS_REVIEW`.                                 |
+| 3   | `DEC-003 / Q05` | **PARTIALLY_CONFIRMED; KEY CONFIRMED** | Đã cấu hình `employeeCode,attendanceDate,shiftName`; còn mở quy trình file sửa/file nhiều kỳ.                                                      |
+| 4   | `Q10 / Q11`     | **OPEN**                               | Cần duyệt luồng phê duyệt (ai duyệt, tách vai trò lập/duyệt, điều chỉnh sau khóa). Hiện tại: tắt toàn bộ workflow.                                 |
+| 5   | `Q15 / PDF`     | **PARTIAL**                            | Cần mẫu bảng công chính thức, logo, tiêu đề công ty để thay thế watermark development.                                                             |
 
 ---
 

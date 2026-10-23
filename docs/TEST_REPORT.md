@@ -1,6 +1,6 @@
 # Báo cáo kiểm thử
 
-Ngày chạy gần nhất: 23/10/2026, timezone `Asia/Ho_Chi_Minh`. Test tự động dùng dữ liệu **synthetic**. File `SX.xlsx` người dùng upload chỉ được dùng để kiểm tra parser/cấu trúc, chưa dùng làm oracle tính công và không thay thế UAT.
+Ngày chạy gần nhất: 23/10/2026, timezone `Asia/Ho_Chi_Minh`. Test tự động dùng dữ liệu **synthetic**. File `SX.xlsx` người dùng upload đã được xử lý trên development để kiểm tra vận hành nhưng không phải oracle độc lập và không thay thế expected của HR/UAT.
 
 ## Kết quả cuối
 
@@ -8,7 +8,7 @@ Ngày chạy gần nhất: 23/10/2026, timezone `Asia/Ho_Chi_Minh`. Test tự đ
 | ---------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
 | Engine unit                                    | `pnpm.cmd test:run`                              | 31/31 PASS, 2 files                                                                                          |
 | API unit/service/security/export/import policy | `pnpm.cmd --filter @tinh-cong/api test:run`      | 26/26 PASS, 6 files; gồm guard PATCH nhân viên rỗng, regression confirm 2.765 dòng và source-shift           |
-| PostgreSQL integration                         | `pnpm.cmd test:integration`                      | 8/8 PASS trên DB mới; thêm CRUD/filter/history/import nhân viên và bảo toàn attendance khi ngừng hoạt động   |
+| PostgreSQL integration                         | `pnpm.cmd test:integration`                      | 8/8 PASS trên DB mới; có regression tự chuẩn bị rule/kỳ DRAFT cho tháng nguồn trước khi tính                 |
 | Browser E2E                                    | `pnpm.cmd test:e2e`                              | 12/12 PASS, Chromium; bảng nhân viên 4 trường + thao tác, import/template, responsive và visual Import Excel |
 | ESLint                                         | `pnpm.cmd lint`                                  | PASS, 0 warning; ESLint flat config kiểm tra TypeScript/React/Node toàn monorepo                             |
 | TypeScript                                     | `pnpm.cmd typecheck`                             | PASS, 5 workspace packages có script                                                                         |
@@ -20,6 +20,19 @@ Ngày chạy gần nhất: 23/10/2026, timezone `Asia/Ho_Chi_Minh`. Test tự đ
 | Synthetic scale                                | `pnpm.cmd test:performance`                      | PASS, 1.000 NV: query 43,69 ms; engine 6,15 ms; tổng 175,02 ms                                               |
 
 Tổng test tự động ở lần chạy cuối đạt: **77 PASS** (`31 + 26 + 8 + 12`), **0 FAIL**, **0 SKIP** sau lần chạy lại đầy đủ môi trường. Các kiểm tra build/migration/Docker/backup/performance được ghi riêng, không cộng vào số test case.
+
+## Mốc xử lý lại `SX.xlsx` sau khi nạp master nhân viên ngày 23/10/2026
+
+- Trước khi ghi dữ liệu, tạo backup development `storage/backups/tinhcong-20261023-093925.sql`, SHA-256 `21722B107EAF2EA952DAEB2CA98AE653BE9D54392754DF09C712BFC2B1328FA6`.
+- Snapshot trước xử lý: import `4c14bdd5-6a91-47a5-a63c-737f049f5047` ở trạng thái `ACCEPTED`, 2.765 raw rows, 1.740 source issues, 92 mã nguồn; 2.495 dòng thuộc 83 mã đã liên kết và 270 dòng thuộc 9 mã chưa có master. Không tự tạo hồ sơ/phòng ban.
+- Lần chạy đầu trả `calculatedRows=0` và tạo 1.726 `SHIFT_RULE_NOT_FOUND`. Nguyên nhân kỹ thuật: nguồn thuộc 09/2026 nhưng seed development chỉ có kỳ 10/2026 và rule bắt đầu 09/10/2026. Pipeline fail-closed, không tạo calculation sai.
+- Sửa pipeline để trước khi tính chỉ mở rộng rule Ca1/Ca3 đã khớp tuyệt đối định nghĩa được duyệt và tạo kỳ nguồn ở trạng thái `DRAFT`; nếu thiếu ca, rule khác định nghĩa hoặc chồng lấn thì vẫn conflict/fail-closed. Không tạo `work_schedules`, employee hoặc department; có audit `IMPORT_CALCULATION_COVERAGE_PREPARED`.
+- Regression PostgreSQL dùng ngày nguồn 10/09/2026 xác nhận rule CA1 được mở rộng, kỳ 09/2026 được tạo DRAFT, calculation được sinh và `work_schedules=0`. Lần integration đầu migration/seed PASS nhưng `beforeAll` vượt 30 giây nên **0 test PASS / 8 SKIP**; database tạm đã xóa. Tăng riêng `hookTimeout` integration lên 60 giây, chạy lại trên database mới khác đạt **8/8 PASS**, database tạm đã xóa.
+- Gate cuối: ESLint PASS 0 warning; typecheck PASS; production build PASS; engine 31/31; API 26/26; PostgreSQL integration 8/8; Playwright 12/12. Tổng 77 PASS, 0 FAIL, 0 SKIP ở lần chạy cuối đầy đủ.
+- Artifact API đã kiểm thử được chép vào writable layer của container development. Vòng health đầu hết thời gian trong lúc API bootstrap kéo dài; pipeline chưa được gọi ở thời điểm đó. Sau khi Nest hoàn tất khởi động, artifact marker PASS, DB/API/web healthy và API trực tiếp, proxy, Nginx đều HTTP 200. Image tag vẫn là checkpoint cũ, không thay thế bằng chứng Dockerfile build tái lập.
+- Kết quả chạy lại: 1.726 normalization và 1.726 calculation, tất cả `VALID`; CA1 1.116 dòng, CA3 610 dòng. Có 0 tier mismatch, 0 giá trị thời gian âm, 0 normalization thiếu timestamp/evidence và 0 work schedule. Rule hiệu lực từ 01/09/2026 cho CA1, 03/09/2026 cho CA3; kỳ 09/2026 vẫn `DRAFT`.
+- 1.726 `SHIFT_RULE_NOT_FOUND` cũ được revalidation sang `RESOLVED`. Còn blocking OPEN đúng guard: 694 `UNSUPPORTED_SHIFT_FOR_CALCULATION`, 270 `EMPLOYEE_NOT_FOUND`, 65 `TIMESTAMP_EVIDENCE_REQUIRED`, 10 `MULTIPLE_ROWS_SAME_EMPLOYEE_DATE`. Chín mã thiếu là `NV00084`, `NV00100`, `NV00115`, `NV00129`, `NV00200`, `NV00209`, `NV00210`, `NV00212`, `NV00227`.
+- Raw/source vẫn là 2.765 dòng và 1.740 issue, import vẫn `ACCEPTED`; số master hoạt động giữ nguyên 123 nhân viên/19 phòng ban. Kết quả development này chưa phải UAT/expected HR và không được phát hành.
 
 ## Mốc chẩn đoán mapping phòng ban import nhân viên ngày 23/10/2026
 

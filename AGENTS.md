@@ -1,14 +1,14 @@
 # Hướng dẫn tiếp tục dự án chấm công In Nhật Hàn
 
-Cập nhật 22/10/2026. Trước khi sửa code, đọc `docs/13_PROGRESS_REPORT.md`, `docs/12_OPEN_QUESTIONS.md`, `docs/17_PHASE0_BUSINESS_DECISIONS.md`, `docs/TEST_REPORT.md` và `docs/DEPLOYMENT_READINESS.md`.
+Cập nhật 23/10/2026. Trước khi sửa code, đọc `docs/13_PROGRESS_REPORT.md`, `docs/12_OPEN_QUESTIONS.md`, `docs/17_PHASE0_BUSINESS_DECISIONS.md`, `docs/TEST_REPORT.md` và `docs/DEPLOYMENT_READINESS.md`.
 
 ## Trạng thái checkpoint
 
 - Phase 1–6 đã có implementation development tại `D:\chamCong`.
 - Engine: 31 unit tests synthetic đạt.
-- API: 25 unit/service/export/import-policy tests và 6 PostgreSQL integration tests đạt.
-- Web: 12 màn hình; 9 Playwright E2E đạt, gồm refresh phiên, confirm một lần, xem raw import và visual QA Import Excel tại ba viewport.
-- Docker image API/web hiện tại đã build; PostgreSQL/API/Nginx healthy qua API trực tiếp và proxy.
+- API: 26 unit/service/export/import-policy tests và 8 PostgreSQL integration tests đạt.
+- Web: 12 màn hình; 12 Playwright E2E đạt, gồm refresh phiên, confirm một lần, xem raw import, quản lý nhân viên và visual QA Import Excel tại ba viewport.
+- PostgreSQL/API/Nginx local healthy qua API trực tiếp và proxy. Artifact mới nhất đang ở writable layer; image Dockerfile tái lập vẫn PARTIAL.
 - Backup/restore synthetic đã phục hồi 25 bảng.
 - Trạng thái tổng thể là `DEVELOPMENT_COMPLETE_WITH_BLOCKERS`, không phải production-ready.
 
@@ -47,7 +47,7 @@ Cập nhật 22/10/2026. Trước khi sửa code, đọc `docs/13_PROGRESS_REPOR
 
 ## Blocker hiện tại
 
-- `SX.xlsx` hiện `ACCEPTED` với 2.765 raw rows và 1.740 source issues. DEC-007 đã bỏ dependency lịch phân ca; 92 mã nhân viên vẫn chưa có master nên chưa được liên kết/tính công. Không tự provision master.
+- `SX.xlsx` hiện `ACCEPTED` với 2.765 raw rows và 1.740 source issues. 83/92 mã nguồn đã có master; pipeline development đã tạo 1.726 calculation `VALID` sau khi chuẩn bị coverage rule/kỳ DRAFT tháng 09. Còn 9 mã/270 dòng thiếu master, 694 dòng ca không hỗ trợ, 65 dòng thiếu timestamp evidence và 10 dòng nhiều bản ghi cùng nhân viên/ngày. Không tự provision master, không tự tính dòng bị chặn.
 - DEC-002 đã đủ cho trường hợp nguồn `Ca3` hiện tại theo DEC-007; các trường hợp checkout khác ngoài tiêu chí đã chốt vẫn OPEN.
 - DEC-003 đã chốt khóa `Mã nhân viên + Ngày chấm công + Tên ca`; quy trình file sửa/file nhiều kỳ vẫn OPEN.
 - Q10/Q11 và các quyết định phát hành/chỉnh sửa sau khóa chưa duyệt.
