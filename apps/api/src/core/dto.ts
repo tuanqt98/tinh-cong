@@ -56,6 +56,59 @@ export class EmployeeQueryDto extends PaginationDto {
   sortOrder: 'asc' | 'desc' = 'asc';
 }
 
+export class AttendanceSummaryQueryDto extends PaginationDto {
+  @IsOptional()
+  @IsUUID()
+  periodId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  department?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  shiftCode?: string;
+
+  @IsOptional()
+  @IsIn(['VALID', 'NEEDS_REVIEW', 'NO_DATA'])
+  processingStatus?: 'VALID' | 'NEEDS_REVIEW' | 'NO_DATA';
+
+  @IsOptional()
+  @IsEnum(PeriodStatus)
+  approvalStatus?: PeriodStatus;
+
+  @IsOptional()
+  @IsIn([
+    'code',
+    'name',
+    'department',
+    'workedSeconds',
+    'attendanceDays',
+    'exceptionCount',
+    'processingStatus',
+  ])
+  sortBy:
+    | 'code'
+    | 'name'
+    | 'department'
+    | 'workedSeconds'
+    | 'attendanceDays'
+    | 'exceptionCount'
+    | 'processingStatus' = 'code';
+
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  sortOrder: 'asc' | 'desc' = 'asc';
+}
+
+export class EmployeeAttendanceQueryDto {
+  @IsOptional()
+  @IsUUID()
+  periodId?: string;
+}
+
 export class CreateDepartmentDto {
   @IsString()
   @IsNotEmpty()

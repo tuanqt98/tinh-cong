@@ -14,9 +14,9 @@ Hệ thống được bảo vệ bằng các chốt chặn an toàn (fail-closed
 | Hạng mục kiểm thử                | Lệnh thực hiện                                       | Kết quả thực tế                 | Ghi chú                                                                                              |
 | -------------------------------- | ---------------------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | **Engine Unit Tests**            | `pnpm.cmd test:run` (engine)                         | **31/31 PASS** (2 files)        | Tính công số nguyên giây, bảo toàn tier, Ca 1/Ca 3, đi muộn/về sớm độc lập                           |
-| **API Unit & Service Tests**     | `pnpm.cmd test:run` (api)                            | **26/26 PASS** (6 files)        | Có guard PATCH nhân viên rỗng, regression confirm 2.765 dòng, source-shift, RBAC/scope và export     |
-| **PostgreSQL Integration Tests** | migration + seed DB mới; `pnpm.cmd test:integration` | **8/8 PASS** (1 file)           | PostgreSQL 16 thật; coverage rule/kỳ DRAFT tháng nguồn và quản lý/import nhân viên an toàn           |
-| **Browser E2E Tests**            | `pnpm.cmd test:e2e`                                  | **12/12 PASS** (Chromium)       | Màn nhân viên 4 trường + thao tác, import/template, responsive và visual QA Import Excel             |
+| **API Unit & Service Tests**     | `pnpm.cmd test:run` (api)                            | **29/29 PASS** (7 files)        | Thêm aggregate revision mới nhất, search không dấu và Excel summary chống formula injection          |
+| **PostgreSQL Integration Tests** | migration + seed DB mới; `pnpm.cmd test:integration` | **9/9 PASS** (1 file)           | PostgreSQL 16 thật; thêm summary/export, RBAC scope và validation kỳ                                 |
+| **Browser E2E Tests**            | `pnpm.cmd test:e2e`                                  | **17/17 PASS** (Chromium)       | Thêm Bảng công tổng hợp, filter/URL/export/detail/mobile và visual QA 1536×1024                      |
 | **ESLint**                       | `pnpm.cmd lint`                                      | **PASS, 0 warning**             | Flat config kiểm tra TypeScript/React/Node thật; không còn lint no-op                                |
 | **TypeScript Typecheck**         | `pnpm.cmd typecheck`                                 | **PASS** (5 workspace packages) | `@tinh-cong/attendance-engine`, `shared`, `ui`, `api`, `web`                                         |
 | **Production Build**             | `pnpm.cmd build`                                     | **PASS** (toàn monorepo)        | Build Vite web bundle và NestJS API distribution                                                     |
@@ -24,9 +24,11 @@ Hệ thống được bảo vệ bằng các chốt chặn an toàn (fail-closed
 | **Synthetic Scale Benchmark**    | `pnpm.cmd test:performance`                          | **PASS** (1.000 NV)             | Query: 16,72 ms, Engine: 5,66 ms, Tổng: 2.386,99 ms                                                  |
 | **Backup & SHA-256**             | `scripts/backup.ps1`                                 | **PASS**                        | Tạo bản sao lưu SQL và mã băm SHA-256 thành công                                                     |
 
-Tổng số test tự động ở lần chạy cuối sau khi nạp đủ biến môi trường: **77 PASS**, 0 FAIL, 0 SKIP. Lần integration đầu của mốc hardening đạt 7/8 và phát hiện PATCH nhân viên rỗng trả 200; sau khi thêm guard, chạy lại trên DB mới khác đạt 8/8. Chi tiết ở `TEST_REPORT.md`.
+Tổng số test tự động ở lần chạy cuối sau khi nạp đủ biến môi trường: **86 PASS**, 0 FAIL, 0 SKIP (`31 engine + 29 API + 9 integration + 17 E2E`). Lần integration đầu của mốc Màn 05 migrate/seed thành công nhưng thiếu alias credential nên 0/9 test chạy; database tạm đã xóa và lần chạy lại trên DB mới khác đạt 9/9. Chi tiết ở `TEST_REPORT.md`.
 
 Màn Import Excel đã được xây dựng lại theo mockup: sidebar/topbar dùng chung, stepper động, upload kéo-thả, mapping bảy trường, validation summary, preview/search/filter/export lỗi/phân trang, action bar và view lịch sử. Ảnh bằng chứng trước/sau ở `docs/ui-reference/`. Chưa tuyên bố pixel-perfect vì chưa có automated image-diff threshold và chưa có logo chính thức.
+
+Màn Bảng công tổng hợp đã thay JSON bằng UI/API thật với bảy KPI, filter/sort/phân trang backend, bảng 18 cột, aggregate toàn tập lọc, detail theo nhân viên + kỳ và Excel có metadata/nhãn tạm. Chỉ revision mới nhất `VALID` được cộng; trạng thái xử lý tách trạng thái kỳ, scope kiểm tra ở backend và ngày làm việc giữ `N/A` khi chưa có policy. Visual evidence 1536×1024 đã lưu nhưng chưa có automated pixel-diff/UAT nên không tuyên bố pixel-perfect 100%.
 
 ## 3. Các lỗi kỹ thuật đã phát hiện và tự động khắc phục
 

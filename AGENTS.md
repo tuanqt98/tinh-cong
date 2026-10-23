@@ -6,8 +6,8 @@ Cập nhật 23/10/2026. Trước khi sửa code, đọc `docs/13_PROGRESS_REPOR
 
 - Phase 1–6 đã có implementation development tại `D:\chamCong`.
 - Engine: 31 unit tests synthetic đạt.
-- API: 26 unit/service/export/import-policy tests và 8 PostgreSQL integration tests đạt.
-- Web: 12 màn hình; 12 Playwright E2E đạt, gồm refresh phiên, confirm một lần, xem raw import, quản lý nhân viên và visual QA Import Excel tại ba viewport.
+- API: 29 unit/service/export/import-policy tests và 9 PostgreSQL integration tests đạt.
+- Web: 12 màn hình; 17 Playwright E2E đạt, gồm refresh phiên, confirm một lần, xem raw import, quản lý nhân viên, Bảng công tổng hợp và visual QA.
 - PostgreSQL/API/Nginx local healthy qua API trực tiếp và proxy. Artifact mới nhất đang ở writable layer; image Dockerfile tái lập vẫn PARTIAL.
 - Backup/restore synthetic đã phục hồi 25 bảng.
 - Trạng thái tổng thể là `DEVELOPMENT_COMPLETE_WITH_BLOCKERS`, không phải production-ready.

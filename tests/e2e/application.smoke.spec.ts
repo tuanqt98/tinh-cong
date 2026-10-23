@@ -66,6 +66,63 @@ test.beforeEach(async ({ page }) => {
       return;
     }
 
+    if (path === '/periods') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: '00000000-0000-0000-0000-000000000901',
+            year: 2026,
+            month: 10,
+            status: 'DRAFT',
+            version: 1,
+            lockedAt: null,
+            publishedAt: null,
+          },
+        ]),
+      });
+      return;
+    }
+
+    if (path === '/attendance/summary') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [],
+          total: 0,
+          page: 1,
+          pageSize: 10,
+          period: {
+            id: '00000000-0000-0000-0000-000000000901',
+            year: 2026,
+            month: 10,
+            status: 'DRAFT',
+            version: 1,
+            lockedAt: null,
+            publishedAt: null,
+          },
+          totals: {
+            employees: 0,
+            calculatedEmployees: 0,
+            workedSeconds: 0,
+            tier100Seconds: 0,
+            tier130Seconds: 0,
+            tier150Seconds: 0,
+            tier210Seconds: 0,
+            lateSeconds: 0,
+            earlySeconds: 0,
+            attendanceDays: 0,
+            exceptionCount: 0,
+          },
+          workingDaysAvailable: false,
+          calculationVersion: { engineVersions: [], maxRevision: null },
+        }),
+      });
+      return;
+    }
+
     if (emptyApiPaths.some((candidate) => path === candidate || path.startsWith(`${candidate}/`))) {
       await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
       return;

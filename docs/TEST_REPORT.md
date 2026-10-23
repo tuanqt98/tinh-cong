@@ -4,22 +4,34 @@ Ngày chạy gần nhất: 23/10/2026, timezone `Asia/Ho_Chi_Minh`. Test tự đ
 
 ## Kết quả cuối
 
-| Nhóm                                           | Lệnh/bằng chứng                                  | Kết quả                                                                                                      |
-| ---------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| Engine unit                                    | `pnpm.cmd test:run`                              | 31/31 PASS, 2 files                                                                                          |
-| API unit/service/security/export/import policy | `pnpm.cmd --filter @tinh-cong/api test:run`      | 26/26 PASS, 6 files; gồm guard PATCH nhân viên rỗng, regression confirm 2.765 dòng và source-shift           |
-| PostgreSQL integration                         | `pnpm.cmd test:integration`                      | 8/8 PASS trên DB mới; có regression tự chuẩn bị rule/kỳ DRAFT cho tháng nguồn trước khi tính                 |
-| Browser E2E                                    | `pnpm.cmd test:e2e`                              | 12/12 PASS, Chromium; bảng nhân viên 4 trường + thao tác, import/template, responsive và visual Import Excel |
-| ESLint                                         | `pnpm.cmd lint`                                  | PASS, 0 warning; ESLint flat config kiểm tra TypeScript/React/Node toàn monorepo                             |
-| TypeScript                                     | `pnpm.cmd typecheck`                             | PASS, 5 workspace packages có script                                                                         |
-| Production build                               | `pnpm.cmd build`                                 | PASS, API + web + engine + UI + shared                                                                       |
-| Prisma                                         | `prisma validate`; `prisma migrate deploy`; seed | PASS, migration `20261021145100_init` và synthetic seed                                                      |
-| Docker build/runtime                           | Buildx + artifact packaging; health endpoints    | Web UI mới runtime PASS; Dockerfile/API rebuild vẫn NOT_COMPLETED do build daemon treo                       |
-| Docker runtime                                 | API direct, Nginx `/healthz`, proxy API và web   | PASS; DB/API/web healthy; API direct/proxy và Nginx HTTP 200; smoke runtime import/template PASS             |
-| Backup/restore                                 | `backup.ps1`, `restore.ps1` vào DB tạm           | PASS, SHA-256 tạo được, restore 25 bảng; DB tạm đã xóa                                                       |
-| Synthetic scale                                | `pnpm.cmd test:performance`                      | PASS, 1.000 NV: query 43,69 ms; engine 6,15 ms; tổng 175,02 ms                                               |
+| Nhóm                                           | Lệnh/bằng chứng                                  | Kết quả                                                                                          |
+| ---------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| Engine unit                                    | `pnpm.cmd test:run`                              | 31/31 PASS, 2 files                                                                              |
+| API unit/service/security/export/import policy | `pnpm.cmd --filter @tinh-cong/api test:run`      | 29/29 PASS, 7 files; thêm revision mới nhất, search không dấu và Excel chống formula injection   |
+| PostgreSQL integration                         | `pnpm.cmd test:integration`                      | 9/9 PASS trên DB mới; thêm API summary/export, RBAC scope và kỳ không tồn tại                    |
+| Browser E2E                                    | `pnpm.cmd test:e2e`                              | 17/17 PASS, Chromium; thêm màn tổng hợp, lọc/URL, export, detail, mobile và visual 1536×1024     |
+| ESLint                                         | `pnpm.cmd lint`                                  | PASS, 0 warning; ESLint flat config kiểm tra TypeScript/React/Node toàn monorepo                 |
+| TypeScript                                     | `pnpm.cmd typecheck`                             | PASS, 5 workspace packages có script                                                             |
+| Production build                               | `pnpm.cmd build`                                 | PASS, API + web + engine + UI + shared                                                           |
+| Prisma                                         | `prisma validate`; `prisma migrate deploy`; seed | PASS, migration `20261021145100_init` và synthetic seed                                          |
+| Docker build/runtime                           | Buildx + artifact packaging; health endpoints    | Web UI mới runtime PASS; Dockerfile/API rebuild vẫn NOT_COMPLETED do build daemon treo           |
+| Docker runtime                                 | API direct, Nginx `/healthz`, proxy API và web   | PASS; DB/API/web healthy; API direct/proxy và Nginx HTTP 200; smoke runtime import/template PASS |
+| Backup/restore                                 | `backup.ps1`, `restore.ps1` vào DB tạm           | PASS, SHA-256 tạo được, restore 25 bảng; DB tạm đã xóa                                           |
+| Synthetic scale                                | `pnpm.cmd test:performance`                      | PASS, 1.000 NV: query 43,69 ms; engine 6,15 ms; tổng 175,02 ms                                   |
 
-Tổng test tự động ở lần chạy cuối đạt: **77 PASS** (`31 + 26 + 8 + 12`), **0 FAIL**, **0 SKIP** sau lần chạy lại đầy đủ môi trường. Các kiểm tra build/migration/Docker/backup/performance được ghi riêng, không cộng vào số test case.
+Tổng test tự động ở lần chạy cuối đạt: **86 PASS** (`31 + 29 + 9 + 17`), **0 FAIL**, **0 SKIP** sau lần chạy lại đầy đủ môi trường. Các kiểm tra build/migration/Docker/backup/performance được ghi riêng, không cộng vào số test case.
+
+## Mốc Màn 05 – Bảng công tổng hợp ngày 23/10/2026
+
+- Thay trang JSON `/attendance` bằng UI tổng hợp thật: chọn kỳ/phòng ban/trạng thái kỳ, bảy KPI, tìm kiếm, lọc ca/trạng thái xử lý, sort và phân trang server-side 10/20/50/100, bảng 18 cột, chọn dòng, tổng cộng toàn bộ tập lọc và điều hướng chi tiết bằng `employeeId + periodId`.
+- API `GET /attendance/summary` áp RBAC/data scope backend. Mỗi raw chỉ lấy revision calculation mới nhất; chỉ calculation `VALID` được cộng thời gian. `NEEDS_REVIEW` được tách khỏi trạng thái kỳ; phòng ban trong kỳ ưu tiên snapshot raw. `Số ngày làm việc` trả `null`/UI `N/A` vì chưa có lịch/policy được duyệt, không tự suy diễn.
+- `GET /attendance/export` xuất toàn bộ tập lọc thay vì chỉ trang hiện tại, có công ty/tiêu đề/kỳ/bộ lọc/timestamp/phiên bản engine-revision/dòng tổng, định dạng `[h]:mm:ss`, nhãn `DỮ LIỆU TẠM, CHƯA CHỐT` cho kỳ chưa khóa/phát hành và chống formula injection.
+- Unit regression mới đạt 3/3: bỏ revision cũ khỏi aggregate, giữ phòng ban trong kỳ, tách trạng thái xử lý, tìm tên không dấu và kiểm tra workbook/formula injection. Bộ API đầy đủ đạt 29/29; engine giữ 31/31.
+- Integration lần đầu đã migrate + seed DB mới nhưng **0 PASS / 9 SKIP** vì process thiếu hai biến `INTEGRATION_*`; database tạm đã được xóa. Chạy lại trên DB mới khác với credential synthetic được ánh xạ trong process đạt **9/9 PASS**; DB tạm cũng đã xóa.
+- Playwright chuẩn của repo đạt **17/17 PASS**, gồm 5 kịch bản màn tổng hợp: render/aggregate, filter + URL + sort + page size, export không mang page, detail chỉ mang hai ID và mobile cuộn ngang. Lần chạy trực tiếp trước đó hoàn tất test nhưng tiến trình webServer không tự thoát trước timeout nên không được ghi PASS; chạy lại bằng `scripts/run-e2e.ps1` đạt và dọn server.
+- Visual evidence synthetic tại `docs/ui-evidence/attendance-summary-after.png`; target do người dùng cung cấp tại `docs/ui-reference/attendance-summary-target.png`. Đã đối chiếu thủ công ở 1536×1024; chưa có automated image-diff threshold nên không tuyên bố pixel-perfect 100%.
+- Gate cuối: ESLint PASS 0 warning; typecheck PASS; production build PASS; engine 31/31; API 29/29; PostgreSQL integration 9/9; Playwright 17/17. Tổng **86 PASS**, 0 FAIL, 0 SKIP ở lần chạy cuối đầy đủ.
+- Artifact API/web đã kiểm thử được chép vào writable layer runtime local và restart, không reset PostgreSQL. API trực tiếp, API qua Nginx và `/healthz` đều HTTP 200. Smoke có xác thực: kỳ 09/2026 trả 124 hồ sơ trong scope, 83 đã tính, 65.579.700 giây và 2.202 ngoại lệ mở; tìm tên bỏ dấu trả đúng cùng employee ID; kỳ 10/2026 chưa có calculation nên trả 0 đúng dữ liệu. Đây là kiểm chứng development, không phải UAT/oracle HR; image Dockerfile tái lập vẫn PARTIAL.
 
 ## Mốc xử lý lại `SX.xlsx` sau khi nạp master nhân viên ngày 23/10/2026
 

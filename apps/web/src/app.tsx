@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes, useParams } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './auth.js';
 import { AppLayout } from './layout.js';
 import { DashboardPage } from './pages/dashboard.js';
@@ -7,21 +7,11 @@ import { ExceptionsPage } from './pages/exceptions.js';
 import { ApiListPage } from './pages/generic.js';
 import { ImportsPage } from './pages/imports.js';
 import { LoginPage } from './pages/login.js';
+import { AttendanceDetailPage, AttendanceSummaryPage } from './pages/attendance.js';
 
 function Protected() {
   const { user } = useAuth();
   return user ? <AppLayout /> : <Navigate to="/login" replace />;
-}
-
-function EmployeeAttendance() {
-  const { id } = useParams();
-  return (
-    <ApiListPage
-      title="Chi tiết bảng công"
-      description="Ngày ca, timestamp, mức công và lịch sử."
-      path={`/attendance/employee/${id ?? ''}`}
-    />
-  );
 }
 
 export function App() {
@@ -32,27 +22,9 @@ export function App() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/imports" element={<ImportsPage />} />
         <Route path="/employees" element={<EmployeesPage />} />
-        <Route
-          path="/attendance"
-          element={
-            <ApiListPage
-              title="Bảng công tổng hợp"
-              description="Tổng hợp theo nhân viên và kỳ công."
-              path="/attendance"
-            />
-          }
-        />
-        <Route
-          path="/attendance/detail"
-          element={
-            <ApiListPage
-              title="Chi tiết bảng công"
-              description="Chọn nhân viên từ bảng công tổng hợp để xem ngày ca, timestamp và mức công."
-              path="/attendance"
-            />
-          }
-        />
-        <Route path="/attendance/:id" element={<EmployeeAttendance />} />
+        <Route path="/attendance" element={<AttendanceSummaryPage />} />
+        <Route path="/attendance/detail" element={<AttendanceDetailPage />} />
+        <Route path="/attendance/:id" element={<Navigate to="/attendance" replace />} />
         <Route path="/exceptions" element={<ExceptionsPage />} />
         <Route
           path="/periods"

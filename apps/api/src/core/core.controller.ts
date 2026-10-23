@@ -21,11 +21,13 @@ import { Roles } from '../auth/roles.decorator.js';
 import type { AuthenticatedUser } from '../auth/types.js';
 import {
   CalculatePreviewDto,
+  AttendanceSummaryQueryDto,
   ConfirmEmployeeImportDto,
   CreateDepartmentDto,
   CreateEmployeeDto,
   DeactivateEmployeeDto,
   EmployeeQueryDto,
+  EmployeeAttendanceQueryDto,
   CreatePeriodDto,
   CreateShiftDto,
   FeedbackDto,
@@ -216,12 +218,22 @@ export class CoreController {
   }
 
   @Roles(RoleCode.ADMIN, RoleCode.HR, RoleCode.MANAGER, RoleCode.EMPLOYEE)
+  @Get('attendance/summary')
+  attendanceSummary(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: AttendanceSummaryQueryDto,
+  ) {
+    return this.core.attendanceSummary(user, query);
+  }
+
+  @Roles(RoleCode.ADMIN, RoleCode.HR, RoleCode.MANAGER, RoleCode.EMPLOYEE)
   @Get('attendance/employee/:id')
   employeeAttendance(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: EmployeeAttendanceQueryDto,
   ) {
-    return this.core.employeeAttendance(user, id);
+    return this.core.employeeAttendance(user, id, query.periodId);
   }
 
   @Roles(RoleCode.ADMIN, RoleCode.HR, RoleCode.MANAGER)
@@ -263,8 +275,11 @@ export class CoreController {
 
   @Roles(RoleCode.ADMIN, RoleCode.HR, RoleCode.MANAGER)
   @Get('attendance/export')
-  async exportAttendance(@CurrentUser() user: AuthenticatedUser) {
-    const buffer = await this.core.exportAttendanceExcel(user);
+  async exportAttendance(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: AttendanceSummaryQueryDto,
+  ) {
+    const buffer = await this.core.exportAttendanceSummaryExcel(user, query);
     return new StreamableFile(buffer, {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       disposition: `attachment; filename="bang-cong-${new Date().toISOString().slice(0, 10)}.xlsx"`,

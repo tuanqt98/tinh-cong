@@ -17,9 +17,9 @@ Trạng thái tổng thể: **`DEVELOPMENT_COMPLETE_WITH_BLOCKERS`**. Không pro
 ## Kết quả kiểm chứng
 
 - 31/31 engine unit tests PASS.
-- 26/26 API unit/service/security/export/import-policy tests PASS, gồm guard PATCH nhân viên rỗng, regression confirm 2.765 dòng và tính trực tiếp từ `Tên ca` không đọc lịch phân ca.
-- 8/8 API + PostgreSQL integration tests PASS trên database mới sau migration và seed synthetic; gồm source-shift và quản lý/import nhân viên an toàn.
-- 12/12 Playwright Chromium tests PASS, gồm refresh access token, chống confirm lặp, raw import, visual QA Import Excel và màn nhân viên bốn trường + thao tác vẫn có import/template.
+- 29/29 API unit/service/security/export/import-policy tests PASS, gồm guard PATCH nhân viên rỗng, regression confirm 2.765 dòng, source-shift, search không dấu và tổng hợp/export theo revision mới nhất.
+- 9/9 API + PostgreSQL integration tests PASS trên database mới sau migration và seed synthetic; gồm source-shift, quản lý/import nhân viên và attendance summary/export có RBAC scope.
+- 17/17 Playwright Chromium tests PASS, gồm refresh access token, chống confirm lặp, raw import, visual QA Import Excel, màn nhân viên và Bảng công tổng hợp.
 - Typecheck và production build toàn monorepo PASS.
 - Migration/seed PostgreSQL PASS; Docker API/web build PASS.
 - Docker runtime: DB/API/web healthy; login synthetic và dashboard qua Nginx PASS.
@@ -28,6 +28,7 @@ Trạng thái tổng thể: **`DEVELOPMENT_COMPLETE_WITH_BLOCKERS`**. Không pro
 - DEC-007: pipeline dùng đúng `Ca1`/`Ca3` trong file làm phân ca và evidence ngày ca, không đọc/tạo `work_schedules`; ca trống, `--` hoặc alias khác vẫn vào ngoại lệ.
 - Hardening fail-closed: `SOURCE_MASTER_PROVISIONING_ENABLED=false`; API vẫn từ chối tự tạo hồ sơ nhân viên/phòng ban khi chưa có quyết định, UI vô hiệu hóa thao tác, ngoại lệ và dashboard áp data scope backend.
 - Redesign Import Excel hoàn tất ở mức development: layout dùng chung mới, sidebar/topbar, stepper động, upload/mapping/validation/preview/action bar và lịch sử import được tích hợp lại với API hiện hữu. Ảnh before/target/after đã lưu trong `docs/ui-reference/`; chưa tuyên bố pixel-perfect vì chưa có ngưỡng image diff tự động và chưa có logo chính thức.
+- Màn 05 Bảng công tổng hợp đã thay trang JSON bằng UI/API thật: bảy KPI, kỳ/phòng ban/trạng thái, search/ca/trạng thái xử lý, sort + phân trang server-side, bảng 18 cột, tổng toàn tập lọc, detail theo employee + period và Excel toàn tập lọc. Aggregate chỉ cộng revision mới nhất `VALID`; workdays giữ `N/A`, period status tách processing status và backend scope vẫn fail-closed. Ảnh target/after ở `docs/ui-reference/attendance-summary-target.png` và `docs/ui-evidence/attendance-summary-after.png`; đối chiếu thủ công 1536×1024, chưa có image-diff tự động nên không tuyên bố pixel-perfect 100%.
 - Docker config render đúng ba guard. Image web/API hiện tại đã build và recreate thành công; DB/API/web healthy, API trực tiếp/proxy và Nginx đã kiểm tra.
 - Confirm import 2.765 dòng từng lỗi Prisma `P2028` do interactive transaction vượt 5 giây; đã đổi sang batch transaction nguyên tử, rollback cũ được xác minh không ghi raw một phần, image API mới đã deploy local.
 - Image API/web chứa DEC-007 đã build trực tiếp, artifact được kiểm tra và container local được recreate; API trực tiếp, proxy và Nginx đều HTTP 200.
@@ -45,6 +46,8 @@ Gate của mốc Quản lý nhân viên ngày 22/10/2026: lint command exit 0 nh
 Gate hardening mới nhất ngày 22/10/2026: ESLint PASS 0 warning; typecheck PASS; production build PASS; engine 31/31; API 26/26; PostgreSQL integration 8/8 trên DB mới sau migration + seed; Playwright 12/12. Tổng **77 PASS**, 0 FAIL, 0 SKIP. Lần integration đầu của mốc đạt 7/8 và phát hiện PATCH rỗng trả 200; sau khi thêm guard, lần chạy lại trên DB mới khác đạt 8/8. Cả hai DB tạm đều đã xóa trong `finally`.
 
 Gate khôi phục import mới nhất ngày 23/10/2026: ESLint PASS 0 warning; typecheck PASS; build PASS; engine 31/31; API 26/26; PostgreSQL integration 8/8 trên DB mới; Playwright 12/12. Ảnh `employee-management-import-restored.png` xác nhận bố cục năm cột, hai entry point import/template và dialog import trên runtime local.
+
+Gate Màn 05 ngày 23/10/2026: ESLint PASS 0 warning; typecheck PASS; production build PASS; engine 31/31; API 29/29; PostgreSQL integration 9/9 trên DB mới; Playwright 17/17. Tổng **86 PASS**, 0 FAIL, 0 SKIP ở lần chạy cuối đầy đủ. Lần integration đầu migrate/seed thành công nhưng 0/9 chạy vì thiếu alias credential integration; DB tạm đã xóa, lần chạy lại trên DB mới khác đạt 9/9 và DB cũng đã xóa. Runtime writable layer API/web đã cập nhật, ba health endpoint 200; smoke kỳ 09/2026 trả 124 hồ sơ trong scope, 83 đã tính, 65.579.700 giây và 2.202 ngoại lệ mở. Đây là development validation, không thay thế HR/UAT; Dockerfile image build tái lập vẫn PARTIAL.
 
 Runtime local ngày 23/10 đã được cập nhật bằng build artifact đã kiểm thử trong writable layer của container API/web hiện tại sau khi `docker commit` bị treo; tiến trình commit được kết thúc có kiểm tra và không reset DB. DB/API/web healthy; API trực tiếp/proxy và Nginx đều HTTP 200. Smoke đăng nhập trên cổng `8180` xác nhận đúng năm cột, Import/Tải mẫu, dialog và bốn header Excel. Image tag vẫn là checkpoint cũ nên bằng chứng Dockerfile tái lập vẫn PARTIAL.
 

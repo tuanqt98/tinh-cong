@@ -23,6 +23,7 @@ import {
 import type { AuthenticatedUser } from '../auth/types.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type {
+  AttendanceSummaryQueryDto,
   CalculatePreviewDto,
   ConfirmEmployeeImportDto,
   CreateDepartmentDto,
@@ -43,6 +44,42 @@ const NEXT_STATUS: Partial<Record<PeriodStatus, PeriodStatus>> = {
   APPROVED: PeriodStatus.LOCKED,
   LOCKED: PeriodStatus.PUBLISHED,
 };
+
+type AttendanceProcessingStatus = 'VALID' | 'NEEDS_REVIEW' | 'NO_DATA';
+
+export interface AttendanceSummaryRow {
+  employeeId: string;
+  employeeCode: string;
+  employeeName: string;
+  departmentName: string | null;
+  workedSeconds: number;
+  tier100Seconds: number;
+  tier130Seconds: number;
+  tier150Seconds: number;
+  tier210Seconds: number;
+  lateSeconds: number;
+  earlySeconds: number;
+  workingDays: number | null;
+  attendanceDays: number;
+  exceptionCount: number;
+  processingStatus: AttendanceProcessingStatus;
+  approvalStatus: PeriodStatus;
+  calculated: boolean;
+}
+
+export interface AttendanceSummaryTotals {
+  employees: number;
+  calculatedEmployees: number;
+  workedSeconds: number;
+  tier100Seconds: number;
+  tier130Seconds: number;
+  tier150Seconds: number;
+  tier210Seconds: number;
+  lateSeconds: number;
+  earlySeconds: number;
+  attendanceDays: number;
+  exceptionCount: number;
+}
 
 @Injectable()
 export class CoreService {
@@ -764,10 +801,15 @@ export class CoreService {
     return { items, total, page: query.page, pageSize: query.pageSize };
   }
 
-  async employeeAttendance(user: AuthenticatedUser, employeeId: string) {
+  async attendanceSummary(user: AuthenticatedUser, query: AttendanceSummaryQueryDto) {
+    const result = await this.buildAttendanceSummary(user, query);
+    return result.response;
+  }
+
+  async employeeAttendance(user: AuthenticatedUser, employeeId: string, periodId?: string) {
     await this.getEmployee(user, employeeId);
     return this.prisma.attendanceCalculation.findMany({
-      where: { raw: { employeeId } },
+      where: { raw: { employeeId }, ...(periodId ? { periodId } : {}) },
       include: {
         raw: true,
         normalization: true,
@@ -776,6 +818,311 @@ export class CoreService {
       },
       orderBy: [{ normalization: { shiftDate: 'desc' } }, { revision: 'desc' }],
     });
+  }
+
+  private emptyAttendanceTotals(): AttendanceSummaryTotals {
+    return {
+      employees: 0,
+      calculatedEmployees: 0,
+      workedSeconds: 0,
+      tier100Seconds: 0,
+      tier130Seconds: 0,
+      tier150Seconds: 0,
+      tier210Seconds: 0,
+      lateSeconds: 0,
+      earlySeconds: 0,
+      attendanceDays: 0,
+      exceptionCount: 0,
+    };
+  }
+
+  private async buildAttendanceSummary(user: AuthenticatedUser, query: AttendanceSummaryQueryDto) {
+    const page = Number(query.page || 1);
+    const pageSize = Number(query.pageSize || 10);
+    const period = query.periodId
+      ? await this.prisma.attendancePeriod.findUnique({ where: { id: query.periodId } })
+      : await this.prisma.attendancePeriod.findFirst({
+          orderBy: [{ year: 'desc' }, { month: 'desc' }],
+        });
+    if (query.periodId && !period) throw new NotFoundException('Không tìm thấy kỳ công.');
+    if (!period) {
+      return {
+        allRows: [] as AttendanceSummaryRow[],
+        response: {
+          items: [] as AttendanceSummaryRow[],
+          total: 0,
+          page,
+          pageSize,
+          period: null,
+          totals: this.emptyAttendanceTotals(),
+          workingDaysAvailable: false,
+          calculationVersion: {
+            engineVersions: [] as string[],
+            maxRevision: null as number | null,
+          },
+        },
+      };
+    }
+
+    const employeeScope = await this.employeeScope(user);
+    const search = query.search?.trim();
+    const scopedEmployees = await this.prisma.employee.findMany({
+      where: employeeScope,
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        department: { select: { name: true } },
+      },
+      orderBy: { code: 'asc' },
+    });
+    const normalizedSearch = search ? this.normalizeSearchText(search) : '';
+    const employees = normalizedSearch
+      ? scopedEmployees.filter((employee) =>
+          this.normalizeSearchText(`${employee.code} ${employee.name}`).includes(normalizedSearch),
+        )
+      : scopedEmployees;
+    const employeeIds = employees.map((employee) => employee.id);
+    const monthPrefix = `${period.year}-${String(period.month).padStart(2, '0')}`;
+
+    const [calculations, rawRows] = employeeIds.length
+      ? await this.prisma.$transaction([
+          this.prisma.attendanceCalculation.findMany({
+            where: {
+              periodId: period.id,
+              raw: { employeeId: { in: employeeIds } },
+              ...(query.shiftCode ? { normalization: { shiftCode: query.shiftCode } } : {}),
+            },
+            select: {
+              rawId: true,
+              revision: true,
+              status: true,
+              engineVersion: true,
+              workedSeconds: true,
+              tier100Seconds: true,
+              tier130Seconds: true,
+              tier150Seconds: true,
+              tier210Seconds: true,
+              lateSeconds: true,
+              earlySeconds: true,
+              raw: { select: { employeeId: true, departmentName: true } },
+              normalization: { select: { shiftDate: true, shiftCode: true } },
+            },
+            orderBy: [{ rawId: 'asc' }, { revision: 'desc' }],
+          }),
+          this.prisma.attendanceRaw.findMany({
+            where: {
+              employeeId: { in: employeeIds },
+              attendanceDateRaw: { startsWith: monthPrefix },
+              ...(query.shiftCode
+                ? { normalizations: { some: { shiftCode: query.shiftCode } } }
+                : {}),
+            },
+            select: {
+              id: true,
+              employeeId: true,
+              departmentName: true,
+              exceptions: {
+                where: { status: ExceptionStatus.OPEN },
+                select: { id: true, blocking: true },
+              },
+            },
+          }),
+        ])
+      : [[], []];
+
+    const latestCalculations = new Map<string, (typeof calculations)[number]>();
+    for (const calculation of calculations) {
+      if (!latestCalculations.has(calculation.rawId)) {
+        latestCalculations.set(calculation.rawId, calculation);
+      }
+    }
+
+    type Accumulator = {
+      workedSeconds: number;
+      tier100Seconds: number;
+      tier130Seconds: number;
+      tier150Seconds: number;
+      tier210Seconds: number;
+      lateSeconds: number;
+      earlySeconds: number;
+      shiftDates: Set<string>;
+      exceptionCount: number;
+      blockingExceptionCount: number;
+      hasReviewCalculation: boolean;
+      departmentCounts: Map<string, number>;
+    };
+    const byEmployee = new Map<string, Accumulator>();
+    const accumulatorFor = (employeeId: string) => {
+      let accumulator = byEmployee.get(employeeId);
+      if (!accumulator) {
+        accumulator = {
+          workedSeconds: 0,
+          tier100Seconds: 0,
+          tier130Seconds: 0,
+          tier150Seconds: 0,
+          tier210Seconds: 0,
+          lateSeconds: 0,
+          earlySeconds: 0,
+          shiftDates: new Set<string>(),
+          exceptionCount: 0,
+          blockingExceptionCount: 0,
+          hasReviewCalculation: false,
+          departmentCounts: new Map<string, number>(),
+        };
+        byEmployee.set(employeeId, accumulator);
+      }
+      return accumulator;
+    };
+    const countDepartment = (accumulator: Accumulator, departmentName: string | null) => {
+      const name = departmentName?.trim();
+      if (!name) return;
+      accumulator.departmentCounts.set(name, (accumulator.departmentCounts.get(name) ?? 0) + 1);
+    };
+
+    for (const raw of rawRows) {
+      if (!raw.employeeId) continue;
+      const accumulator = accumulatorFor(raw.employeeId);
+      countDepartment(accumulator, raw.departmentName);
+      accumulator.exceptionCount += raw.exceptions.length;
+      accumulator.blockingExceptionCount += raw.exceptions.filter((item) => item.blocking).length;
+    }
+    const engineVersions = new Set<string>();
+    let maxRevision: number | null = null;
+    for (const calculation of latestCalculations.values()) {
+      const employeeId = calculation.raw.employeeId;
+      if (!employeeId) continue;
+      const accumulator = accumulatorFor(employeeId);
+      countDepartment(accumulator, calculation.raw.departmentName);
+      engineVersions.add(calculation.engineVersion);
+      maxRevision = Math.max(maxRevision ?? calculation.revision, calculation.revision);
+      if (calculation.status !== 'VALID') {
+        accumulator.hasReviewCalculation = true;
+        continue;
+      }
+      accumulator.workedSeconds += calculation.workedSeconds ?? 0;
+      accumulator.tier100Seconds += calculation.tier100Seconds ?? 0;
+      accumulator.tier130Seconds += calculation.tier130Seconds ?? 0;
+      accumulator.tier150Seconds += calculation.tier150Seconds ?? 0;
+      accumulator.tier210Seconds += calculation.tier210Seconds ?? 0;
+      accumulator.lateSeconds += calculation.lateSeconds ?? 0;
+      accumulator.earlySeconds += calculation.earlySeconds ?? 0;
+      if (calculation.normalization.shiftDate) {
+        accumulator.shiftDates.add(calculation.normalization.shiftDate.toISOString().slice(0, 10));
+      }
+    }
+
+    let rows: AttendanceSummaryRow[] = employees.map((employee) => {
+      const accumulator = byEmployee.get(employee.id);
+      const calculated = Boolean(accumulator && accumulator.shiftDates.size > 0);
+      const processingStatus: AttendanceProcessingStatus =
+        accumulator && (accumulator.blockingExceptionCount > 0 || accumulator.hasReviewCalculation)
+          ? 'NEEDS_REVIEW'
+          : calculated
+            ? 'VALID'
+            : 'NO_DATA';
+      const periodDepartment = accumulator
+        ? [...accumulator.departmentCounts.entries()].sort(
+            (left, right) => right[1] - left[1],
+          )[0]?.[0]
+        : undefined;
+      return {
+        employeeId: employee.id,
+        employeeCode: employee.code,
+        employeeName: employee.name,
+        departmentName: periodDepartment ?? employee.department?.name ?? null,
+        workedSeconds: accumulator?.workedSeconds ?? 0,
+        tier100Seconds: accumulator?.tier100Seconds ?? 0,
+        tier130Seconds: accumulator?.tier130Seconds ?? 0,
+        tier150Seconds: accumulator?.tier150Seconds ?? 0,
+        tier210Seconds: accumulator?.tier210Seconds ?? 0,
+        lateSeconds: accumulator?.lateSeconds ?? 0,
+        earlySeconds: accumulator?.earlySeconds ?? 0,
+        workingDays: null,
+        attendanceDays: accumulator?.shiftDates.size ?? 0,
+        exceptionCount: accumulator?.exceptionCount ?? 0,
+        processingStatus,
+        approvalStatus: period.status,
+        calculated,
+      };
+    });
+
+    if (query.shiftCode) rows = rows.filter((row) => byEmployee.has(row.employeeId));
+    if (query.department) {
+      const department = this.normalizeSearchText(query.department);
+      rows = rows.filter(
+        (row) => row.departmentName && this.normalizeSearchText(row.departmentName) === department,
+      );
+    }
+    if (query.processingStatus) {
+      rows = rows.filter((row) => row.processingStatus === query.processingStatus);
+    }
+    if (query.approvalStatus && query.approvalStatus !== period.status) rows = [];
+
+    const sortBy = query.sortBy ?? 'code';
+    const direction = query.sortOrder === 'desc' ? -1 : 1;
+    const valueFor = (row: AttendanceSummaryRow): string | number => {
+      if (sortBy === 'name') return row.employeeName;
+      if (sortBy === 'department') return row.departmentName ?? '';
+      if (sortBy === 'workedSeconds') return row.workedSeconds;
+      if (sortBy === 'attendanceDays') return row.attendanceDays;
+      if (sortBy === 'exceptionCount') return row.exceptionCount;
+      if (sortBy === 'processingStatus') return row.processingStatus;
+      return row.employeeCode;
+    };
+    rows.sort((left, right) => {
+      const leftValue = valueFor(left);
+      const rightValue = valueFor(right);
+      const compared =
+        typeof leftValue === 'number' && typeof rightValue === 'number'
+          ? leftValue - rightValue
+          : String(leftValue).localeCompare(String(rightValue), 'vi', { sensitivity: 'base' });
+      return compared === 0
+        ? left.employeeCode.localeCompare(right.employeeCode, 'vi', { sensitivity: 'base' })
+        : compared * direction;
+    });
+
+    const totals = rows.reduce<AttendanceSummaryTotals>(
+      (total, row) => ({
+        employees: total.employees + 1,
+        calculatedEmployees: total.calculatedEmployees + (row.calculated ? 1 : 0),
+        workedSeconds: total.workedSeconds + row.workedSeconds,
+        tier100Seconds: total.tier100Seconds + row.tier100Seconds,
+        tier130Seconds: total.tier130Seconds + row.tier130Seconds,
+        tier150Seconds: total.tier150Seconds + row.tier150Seconds,
+        tier210Seconds: total.tier210Seconds + row.tier210Seconds,
+        lateSeconds: total.lateSeconds + row.lateSeconds,
+        earlySeconds: total.earlySeconds + row.earlySeconds,
+        attendanceDays: total.attendanceDays + row.attendanceDays,
+        exceptionCount: total.exceptionCount + row.exceptionCount,
+      }),
+      this.emptyAttendanceTotals(),
+    );
+    const offset = (page - 1) * pageSize;
+    return {
+      allRows: rows,
+      response: {
+        items: rows.slice(offset, offset + pageSize),
+        total: rows.length,
+        page,
+        pageSize,
+        period: {
+          id: period.id,
+          year: period.year,
+          month: period.month,
+          status: period.status,
+          version: period.version,
+          lockedAt: period.lockedAt,
+          publishedAt: period.publishedAt,
+        },
+        totals,
+        workingDaysAvailable: false,
+        calculationVersion: {
+          engineVersions: [...engineVersions].sort(),
+          maxRevision,
+        },
+      },
+    };
   }
 
   async listPublications(user: AuthenticatedUser) {
@@ -836,6 +1183,124 @@ export class CoreService {
         body: dto.body,
       },
     });
+  }
+
+  async exportAttendanceSummaryExcel(user: AuthenticatedUser, query: AttendanceSummaryQueryDto) {
+    const { allRows, response } = await this.buildAttendanceSummary(user, query);
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Hệ thống chấm công In Nhật Hàn';
+    workbook.created = new Date();
+    const sheet = workbook.addWorksheet('TongHopKyCong', {
+      views: [{ state: 'frozen', ySplit: 8, xSplit: 3 }],
+    });
+    const periodLabel = response.period
+      ? `Tháng ${String(response.period.month).padStart(2, '0')}/${response.period.year}`
+      : 'Chưa có kỳ công';
+    const temporary = !response.period || !['LOCKED', 'PUBLISHED'].includes(response.period.status);
+    sheet.mergeCells('A1:P1');
+    sheet.getCell('A1').value = 'CÔNG TY TNHH IN NHẬT HÀN';
+    sheet.mergeCells('A2:P2');
+    sheet.getCell('A2').value = 'BẢNG CÔNG TỔNG HỢP';
+    sheet.mergeCells('A3:P3');
+    sheet.getCell('A3').value = `${periodLabel}${temporary ? ' — DỮ LIỆU TẠM, CHƯA CHỐT' : ''}`;
+    sheet.mergeCells('A4:P4');
+    sheet.getCell('A4').value =
+      `Bộ lọc: Phòng ban=${this.safeExcelText(query.department ?? 'Tất cả')}; Ca=${this.safeExcelText(query.shiftCode ?? 'Tất cả')}; Trạng thái xử lý=${query.processingStatus ?? 'Tất cả'}; Trạng thái kỳ=${query.approvalStatus ?? 'Tất cả'}; Tìm kiếm=${this.safeExcelText(query.search ?? 'Không')}`;
+    sheet.mergeCells('A5:P5');
+    sheet.getCell('A5').value =
+      `Xuất lúc: ${new Date().toISOString()}; phiên bản kỳ: ${response.period?.version ?? 'N/A'}; engine: ${response.calculationVersion.engineVersions.join(', ') || 'N/A'}; revision cao nhất: ${response.calculationVersion.maxRevision ?? 'N/A'}`;
+    sheet.mergeCells('A6:P6');
+    sheet.getCell('A6').value =
+      `Tổng nhân viên: ${response.totals.employees}; đã tính công: ${response.totals.calculatedEmployees}; ngoại lệ mở: ${response.totals.exceptionCount}`;
+    for (const rowNumber of [1, 2, 3]) {
+      sheet.getRow(rowNumber).font = {
+        bold: true,
+        size: rowNumber === 2 ? 16 : 11,
+        color: { argb: rowNumber === 3 && temporary ? 'FFB45309' : 'FF14213D' },
+      };
+      sheet.getRow(rowNumber).alignment = { horizontal: 'center' };
+    }
+    sheet.getRow(4).font = { size: 9, color: { argb: 'FF475569' } };
+    sheet.getRow(5).font = { size: 9, color: { argb: 'FF475569' } };
+    sheet.getRow(6).font = { bold: true, size: 10, color: { argb: 'FF14213D' } };
+
+    const headers = [
+      'STT',
+      'Mã NV',
+      'Họ tên',
+      'Phòng ban trong kỳ',
+      'Tổng công',
+      'Giờ 100%',
+      'Giờ 130%',
+      'Giờ 150%',
+      'Giờ 210%',
+      'Đi muộn',
+      'Về sớm',
+      'Số ngày làm việc',
+      'Số ngày có mặt',
+      'Số ngoại lệ',
+      'Trạng thái xử lý',
+      'Trạng thái kỳ',
+    ];
+    sheet.addRow([]);
+    const headerRow = sheet.addRow(headers);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1769D2' } };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    headerRow.height = 32;
+    const durationColumns = [5, 6, 7, 8, 9, 10, 11];
+    allRows.forEach((row, index) => {
+      const values: Array<string | number> = [
+        index + 1,
+        this.safeExcelText(row.employeeCode),
+        this.safeExcelText(row.employeeName),
+        this.safeExcelText(row.departmentName ?? '—'),
+        row.workedSeconds / 86_400,
+        row.tier100Seconds / 86_400,
+        row.tier130Seconds / 86_400,
+        row.tier150Seconds / 86_400,
+        row.tier210Seconds / 86_400,
+        row.lateSeconds / 86_400,
+        row.earlySeconds / 86_400,
+        row.workingDays ?? 'N/A',
+        row.attendanceDays,
+        row.exceptionCount,
+        row.processingStatus,
+        row.approvalStatus,
+      ];
+      const excelRow = sheet.addRow(values);
+      durationColumns.forEach((column) => {
+        excelRow.getCell(column).numFmt = '[h]:mm:ss';
+      });
+    });
+    const totalRow = sheet.addRow([
+      '',
+      '',
+      'TỔNG CỘNG',
+      '',
+      response.totals.workedSeconds / 86_400,
+      response.totals.tier100Seconds / 86_400,
+      response.totals.tier130Seconds / 86_400,
+      response.totals.tier150Seconds / 86_400,
+      response.totals.tier210Seconds / 86_400,
+      response.totals.lateSeconds / 86_400,
+      response.totals.earlySeconds / 86_400,
+      'N/A',
+      response.totals.attendanceDays,
+      response.totals.exceptionCount,
+      '',
+      '',
+    ]);
+    totalRow.font = { bold: true, color: { argb: 'FF14213D' } };
+    totalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFF6FF' } };
+    durationColumns.forEach((column) => {
+      totalRow.getCell(column).numFmt = '[h]:mm:ss';
+    });
+    sheet.columns = [8, 14, 28, 24, 15, 15, 15, 15, 15, 14, 14, 18, 16, 14, 20, 18].map(
+      (width) => ({ width }),
+    );
+    sheet.autoFilter = { from: { row: 8, column: 1 }, to: { row: 8, column: 16 } };
+    return Buffer.from(await workbook.xlsx.writeBuffer());
   }
 
   async exportAttendanceExcel(user: AuthenticatedUser) {
@@ -1018,6 +1483,15 @@ export class CoreService {
 
   private safeExcelText(value: string) {
     return /^[=+\-@]/.test(value) ? `'${value}` : value;
+  }
+
+  private normalizeSearchText(value: string) {
+    return value
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .replace(/đ/giu, 'd')
+      .toLocaleLowerCase('vi-VN')
+      .trim();
   }
 
   private async employeeScope(user: AuthenticatedUser): Promise<Prisma.EmployeeWhereInput> {

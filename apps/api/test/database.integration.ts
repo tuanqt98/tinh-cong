@@ -505,4 +505,141 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
       }
     }
   });
+
+  it('serves scoped attendance summary and filtered Excel from PostgreSQL data', async () => {
+    const period = await prisma.attendancePeriod.findUniqueOrThrow({
+      where: { year_month: { year: 2026, month: 10 } },
+    });
+    const employee = await prisma.employee.findUniqueOrThrow({ where: { id: ownEmployeeId } });
+    const shiftRule = await prisma.shiftRule.findFirstOrThrow({
+      where: { shift: { code: 'CA1' } },
+      orderBy: { version: 'desc' },
+    });
+    const importRecord = await prisma.attendanceImport.create({
+      data: {
+        originalName: 'attendance-summary-integration.xlsx',
+        sha256: 'b'.repeat(64),
+        mappingVersion: 'attendance-summary-integration-v1',
+        status: 'ACCEPTED',
+        attemptedById: adminUserId,
+        confirmedAt: new Date(),
+      },
+    });
+    const raw = await prisma.attendanceRaw.create({
+      data: {
+        importId: importRecord.id,
+        employeeId: ownEmployeeId,
+        sheet: 'Synthetic summary',
+        rowNo: 2,
+        employeeCode: employee.code,
+        employeeName: employee.name,
+        departmentName: 'Phòng trong kỳ synthetic',
+        attendanceDateRaw: '2026-10-15',
+        checkInRaw: '08:00',
+        checkOutRaw: '17:00',
+        shiftNameRaw: 'Ca1',
+        rawCells: {},
+      },
+    });
+    const normalization = await prisma.attendanceNormalization.create({
+      data: {
+        rawId: raw.id,
+        revision: 1,
+        shiftDate: new Date('2026-10-15T00:00:00.000Z'),
+        checkInAt: new Date('2026-10-15T01:00:00.000Z'),
+        checkOutAt: new Date('2026-10-15T10:00:00.000Z'),
+        shiftCode: 'CA1',
+        shiftDateEvidence: { type: 'SOURCE_TIMESTAMP', reference: 'synthetic:summary' },
+        checkOutDateEvidence: { type: 'SOURCE_TIMESTAMP', reference: 'synthetic:summary' },
+        ruleVersion: 'integration-v1',
+      },
+    });
+    await prisma.attendanceCalculation.create({
+      data: {
+        rawId: raw.id,
+        normalizationId: normalization.id,
+        periodId: period.id,
+        shiftRuleId: shiftRule.id,
+        engineVersion: 'attendance-summary-integration-v1',
+        revision: 1,
+        inputHash: 'd'.repeat(64),
+        status: 'VALID',
+        presenceSeconds: 32_400,
+        breakSeconds: 3_600,
+        workedSeconds: 28_800,
+        lateSeconds: 0,
+        earlySeconds: 0,
+        tier100Seconds: 28_800,
+        tier130Seconds: 0,
+        tier150Seconds: 0,
+        tier210Seconds: 0,
+      },
+    });
+
+    try {
+      const summary = await request(app.getHttpServer())
+        .get(
+          `/api/v1/attendance/summary?periodId=${period.id}&search=${encodeURIComponent(employee.code)}&page=1&pageSize=10`,
+        )
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(summary.body).toMatchObject({
+        total: 1,
+        period: { id: period.id, status: period.status },
+        workingDaysAvailable: false,
+        totals: {
+          employees: 1,
+          calculatedEmployees: 1,
+          workedSeconds: expect.any(Number),
+        },
+      });
+      expect(summary.body.items[0]).toMatchObject({
+        employeeId: ownEmployeeId,
+        departmentName: 'Phòng trong kỳ synthetic',
+        processingStatus: 'VALID',
+        workingDays: null,
+      });
+      expect(summary.body.totals.workedSeconds).toBeGreaterThanOrEqual(28_800);
+
+      const ownScope = await request(app.getHttpServer())
+        .get(`/api/v1/attendance/summary?periodId=${period.id}&page=1&pageSize=100`)
+        .set('Authorization', `Bearer ${employeeToken}`)
+        .expect(200);
+      expect(
+        ownScope.body.items.every(
+          (item: { employeeId: string }) => item.employeeId === ownEmployeeId,
+        ),
+      ).toBe(true);
+
+      await request(app.getHttpServer())
+        .get('/api/v1/attendance/summary?periodId=00000000-0000-0000-0000-000000000999')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(404);
+
+      const exported = await request(app.getHttpServer())
+        .get(
+          `/api/v1/attendance/export?periodId=${period.id}&search=${encodeURIComponent(employee.code)}`,
+        )
+        .set('Authorization', `Bearer ${adminToken}`)
+        .buffer(true)
+        .parse(binaryParser)
+        .expect(200);
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(exported.body as never);
+      const sheet = workbook.getWorksheet('TongHopKyCong');
+      expect(sheet?.getCell('A3').value).toContain('DỮ LIỆU TẠM');
+      expect(sheet?.getCell('B9').value).toBe(employee.code);
+      expect(sheet?.getCell('C10').value).toBe('TỔNG CỘNG');
+
+      await request(app.getHttpServer())
+        .get(`/api/v1/attendance/export?periodId=${period.id}`)
+        .set('Authorization', `Bearer ${employeeToken}`)
+        .expect(403);
+    } finally {
+      await prisma.attendanceCalculation.deleteMany({ where: { rawId: raw.id } });
+      await prisma.attendanceNormalization.deleteMany({ where: { rawId: raw.id } });
+      await prisma.attendanceRaw.deleteMany({ where: { id: raw.id } });
+      await prisma.attendanceImport.deleteMany({ where: { id: importRecord.id } });
+    }
+  });
 });
