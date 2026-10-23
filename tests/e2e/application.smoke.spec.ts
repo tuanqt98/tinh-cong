@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 const emptyApiPaths = [
+  '/departments',
   '/employees',
   '/attendance',
   '/exceptions',
@@ -47,11 +48,20 @@ test.beforeEach(async ({ page }) => {
       return;
     }
 
-    if (path.startsWith('/employees')) {
+    if (path === '/employees/statistics') {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: '{"items":[],"total":0}',
+        body: '{"total":0,"ACTIVE":0,"ON_LEAVE":0,"RESIGNED":0}',
+      });
+      return;
+    }
+
+    if (path === '/employees') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: '{"items":[],"total":0,"page":1,"pageSize":20}',
       });
       return;
     }
@@ -289,6 +299,23 @@ test('hiển thị lịch sử và dữ liệu raw đã import', async ({ page }
       });
       return;
     }
+    if (path === `/imports/${importId}/process` && request.method() === 'POST') {
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          rawRows: 2765,
+          linkedEmployees: 2705,
+          missingEmployees: 60,
+          missingEmployeeCodes: ['NV00084', 'NV00100'],
+          promotedImportIssues: 1740,
+          missingSchedules: 0,
+          missingTimestampEvidence: 0,
+          calculatedRows: 1025,
+        }),
+      });
+      return;
+    }
     await route.fallback();
   });
 
@@ -304,5 +331,12 @@ test('hiển thị lịch sử và dữ liệu raw đã import', async ({ page }
   await page.getByRole('button', { name: 'Xem dữ liệu' }).click();
   await expect(page.getByText('SYN-MASKED')).toBeVisible();
   await expect(page.getByText('1 ngoại lệ')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Chờ duyệt master/lịch' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Chờ duyệt hồ sơ NV' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Xử lý dữ liệu' }).click();
+  const warning = page.getByRole('alert');
+  await expect(warning).toContainText('Thiếu 2 mã nhân viên đang hoạt động');
+  await expect(warning).toContainText('NV00084');
+  await expect(warning).toContainText('NV00100');
+  await warning.getByRole('button', { name: 'Mở Quản lý nhân viên' }).click();
+  await expect(page).toHaveURL(/\/employees$/);
 });

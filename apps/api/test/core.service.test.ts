@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { CoreService } from '../src/core/core.service.js';
 
@@ -49,5 +49,15 @@ describe('CoreService guards', () => {
         where: { raw: { employee: { id: { in: [] } } } },
       }),
     );
+  });
+
+  it('từ chối PATCH nhân viên không có trường hồ sơ hợp lệ', async () => {
+    await expect(
+      service.updateEmployee(
+        { id: 'admin-1', username: 'admin', employeeId: null, roles: ['ADMIN'] },
+        '00000000-0000-0000-0000-000000000001',
+        { reason: 'Không có thay đổi hồ sơ' },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

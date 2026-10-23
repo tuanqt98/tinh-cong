@@ -15,7 +15,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useMemo, useRef, useState, type DragEvent } from 'react';
-import { Badge, Button, EmptyState, cn } from '@tinh-cong/ui';
+import { Badge, Button, EmptyState } from '@tinh-cong/ui';
 
 export interface ImportIssue {
   sheet?: string;
@@ -445,7 +445,10 @@ export function ImportPreviewTable({
   function toggleAll() {
     setSelected((current) => {
       const next = new Set(current);
-      for (const key of visibleKeys) allVisibleSelected ? next.delete(key) : next.add(key);
+      for (const key of visibleKeys) {
+        if (allVisibleSelected) next.delete(key);
+        else next.add(key);
+      }
       return next;
     });
   }
@@ -573,7 +576,8 @@ export function ImportPreviewTable({
                         onChange={() =>
                           setSelected((current) => {
                             const next = new Set(current);
-                            next.has(key) ? next.delete(key) : next.add(key);
+                            if (next.has(key)) next.delete(key);
+                            else next.add(key);
                             return next;
                           })
                         }

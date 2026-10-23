@@ -92,6 +92,76 @@ describe('ImportsService duplicate key policy', () => {
     });
   });
 
+  it('ghi import lớn bằng batch transaction nguyên tử thay vì interactive transaction timeout 5 giây', async () => {
+    const rows = Array.from({ length: 2_765 }, (_, index) => ({
+      sheet: 'Synthetic',
+      rowNo: index + 4,
+      employeeCode: `SYN-${index.toString().padStart(4, '0')}`,
+      employeeName: `Nhân viên ${index}`,
+      departmentName: 'Synthetic',
+      attendanceDate: '2026-10-01',
+      checkIn: '08:00',
+      checkOut: '17:00',
+      shiftName: 'Ca1',
+      rawCells: {},
+    }));
+    const createMany = vi.fn().mockReturnValue({ operation: 'createMany' });
+    const update = vi.fn().mockReturnValue({ operation: 'update' });
+    const createAudit = vi.fn().mockReturnValue({ operation: 'audit' });
+    const transaction = vi.fn().mockResolvedValue([{ count: rows.length }, {}, {}]);
+    const prisma = {
+      attendanceImport: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: '00000000-0000-0000-0000-000000000001',
+          status: 'PREVIEW',
+          storageKey: 'package.json',
+          attemptedById: 'user-1',
+          issues: [],
+          metadata: {
+            mapping: {
+              employeeCode: 'Mã N.Viên',
+              employeeName: 'Tên N.Viên',
+              departmentName: 'Phòng ban',
+              attendanceDate: 'Ngày',
+              checkIn: 'Vào',
+              checkOut: 'Ra',
+              shiftName: 'Tên ca',
+            },
+          },
+        }),
+        update,
+      },
+      attendanceRaw: { findMany: vi.fn().mockResolvedValue([]), createMany },
+      auditLog: { create: createAudit },
+      $transaction: transaction,
+    };
+    const parser = {
+      parse: vi.fn().mockResolvedValue({ rows, sheets: ['Synthetic'], issues: [] }),
+    };
+    const service = new ImportsService(
+      prisma as never,
+      { get: () => 'employeeCode,attendanceDate,shiftName' } as never,
+      parser as never,
+    );
+    vi.spyOn(service, 'process').mockResolvedValue({} as never);
+
+    const result = await service.confirm('00000000-0000-0000-0000-000000000001', {
+      id: 'user-1',
+      username: 'hr',
+      employeeId: null,
+      roles: ['HR'],
+    });
+
+    expect(transaction).toHaveBeenCalledOnce();
+    expect(transaction.mock.calls[0]?.[0]).toBeInstanceOf(Array);
+    expect(transaction.mock.calls[0]?.[0]).toHaveLength(3);
+    expect(createMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.arrayContaining([expect.any(Object)]) }),
+    );
+    expect(createMany.mock.calls[0]?.[0].data).toHaveLength(2_765);
+    expect(result).toMatchObject({ status: 'ACCEPTED', rowCount: 2_765 });
+  });
+
   it('chỉ chấp nhận timestamp đầy đủ ngày và offset cho pipeline', () => {
     const service = createService('employeeCode,attendanceDate,shiftName');
 
@@ -137,6 +207,8 @@ describe('ImportsService duplicate key policy', () => {
     const service = createService('employeeCode,attendanceDate,shiftName');
     const normalized = service.approvedSourceTimestamps(
       {
+        id: 'raw-1',
+        importId: 'import-1',
         attendanceDateRaw: '2026-09-01',
         checkInRaw: '22:05',
         checkOutRaw: '07:00',
@@ -144,11 +216,7 @@ describe('ImportsService duplicate key policy', () => {
         sheet: 'Synthetic',
         rowNo: 4,
       },
-      {
-        sourceType: 'APPROVED_XLSX_IMPORT',
-        sourceRef: 'import:synthetic:raw:1',
-        shift: { code: 'CA3' },
-      },
+      'CA3',
     );
 
     expect(normalized).toMatchObject({
@@ -158,10 +226,105 @@ describe('ImportsService duplicate key policy', () => {
     });
   });
 
-  it('không suy ngày cho nguồn giờ-only chưa được duyệt', () => {
+  it('tính trực tiếp từ Tên ca trong file mà không đọc lịch phân ca', async () => {
+    const normalizationUpsert = vi.fn().mockResolvedValue({ id: 'normalization-1' });
+    const calculationUpsert = vi.fn().mockResolvedValue({ id: 'calculation-1' });
+    const prisma = {
+      shift: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'shift-ca1',
+            code: 'CA1',
+            active: true,
+            rules: [
+              {
+                id: 'rule-ca1-v1',
+                version: 1,
+                effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
+                effectiveTo: null,
+                abnormalDurationThresholdSeconds: 57_600,
+              },
+            ],
+          },
+        ]),
+      },
+      attendancePeriod: {
+        findMany: vi.fn().mockResolvedValue([{ id: 'period-2026-09', year: 2026, month: 9 }]),
+      },
+      attendanceNormalization: { upsert: normalizationUpsert },
+      attendanceCalculation: { upsert: calculationUpsert },
+      attendanceException: {
+        create: vi.fn(),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      exceptionResolution: { createMany: vi.fn() },
+      $transaction: vi.fn(),
+    };
+    const service = new ImportsService(
+      prisma as never,
+      { get: () => 'employeeCode,attendanceDate,shiftName' } as never,
+      {} as never,
+    );
+
+    const processLinkedRows = (
+      service as unknown as {
+        processLinkedRows: (
+          rows: never[],
+          existingKeys: Set<string>,
+          actorId: string,
+        ) => Promise<{
+          missingSchedules: number;
+          missingTimestampEvidence: number;
+          calculatedRows: number;
+        }>;
+      }
+    ).processLinkedRows.bind(service);
+    const result = await processLinkedRows(
+      [
+        {
+          id: 'raw-1',
+          importId: 'import-1',
+          employeeId: 'employee-1',
+          employeeCode: 'NV0001',
+          employeeName: 'Nhân viên kiểm thử',
+          departmentName: 'Phòng kiểm thử',
+          attendanceDateRaw: '2026-09-01',
+          checkInRaw: '08:00',
+          checkOutRaw: '17:00',
+          shiftNameRaw: 'Ca1',
+          sheet: 'Synthetic',
+          rowNo: 4,
+        } as never,
+      ],
+      new Set(),
+      'actor-1',
+    );
+
+    expect(result).toEqual({
+      missingSchedules: 0,
+      missingTimestampEvidence: 0,
+      calculatedRows: 1,
+    });
+    expect(normalizationUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          shiftCode: 'CA1',
+          shiftDateEvidence: expect.objectContaining({
+            type: 'APPROVED_MAPPING',
+            reference: expect.stringContaining('SOURCE_SHIFT_ASSIGNMENT'),
+          }),
+        }),
+      }),
+    );
+    expect(calculationUpsert).toHaveBeenCalledOnce();
+  });
+
+  it('không suy timestamp khi Tên ca nguồn không khớp ca đang xử lý', () => {
     const service = createService('employeeCode,attendanceDate,shiftName');
     const normalized = service.approvedSourceTimestamps(
       {
+        id: 'raw-1',
+        importId: 'import-1',
         attendanceDateRaw: '2026-09-01',
         checkInRaw: '08:00',
         checkOutRaw: '17:00',
@@ -169,11 +332,7 @@ describe('ImportsService duplicate key policy', () => {
         sheet: 'Synthetic',
         rowNo: 4,
       },
-      {
-        sourceType: 'MANUAL_UNAPPROVED',
-        sourceRef: 'synthetic',
-        shift: { code: 'CA1' },
-      },
+      'CA3',
     );
 
     expect(normalized).toBeNull();

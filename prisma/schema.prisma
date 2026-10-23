@@ -50,6 +50,12 @@ enum FeedbackStatus {
   RESOLVED
 }
 
+enum EmployeeStatus {
+  ACTIVE
+  ON_LEAVE
+  RESIGNED
+}
+
 model Department {
   id        String    @id @default(uuid()) @db.Uuid
   code      String    @unique @db.VarChar(50)
@@ -65,24 +71,55 @@ model Department {
 }
 
 model Employee {
-  id          String    @id @default(uuid()) @db.Uuid
-  code        String    @unique @db.VarChar(50)
-  name        String    @db.VarChar(255)
-  departmentId String?  @db.Uuid
-  active      Boolean   @default(true)
-  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
-  department  Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  user        User?
-  schedules   WorkSchedule[]
-  raws        AttendanceRaw[]
-  timesheets  Timesheet[]
-  feedback    EmployeeFeedback[]
-  scopes      ManagerScope[]
+  id             String         @id @default(uuid()) @db.Uuid
+  code           String         @unique @db.VarChar(50)
+  name           String         @db.VarChar(255)
+  departmentId   String?        @db.Uuid
+  currentShiftId String?        @db.Uuid
+  status         EmployeeStatus @default(ACTIVE)
+  active         Boolean        @default(true)
+  birthDate      DateTime?      @db.Date
+  gender         String?        @db.VarChar(20)
+  phone          String?        @db.VarChar(30)
+  email          String?        @db.VarChar(255)
+  position       String?        @db.VarChar(255)
+  startDate      DateTime?      @db.Date
+  endDate        DateTime?      @db.Date
+  createdAt      DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime       @updatedAt @db.Timestamptz(3)
+  department     Department?    @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  currentShift   Shift?         @relation("EmployeeCurrentShift", fields: [currentShiftId], references: [id], onDelete: SetNull)
+  user           User?
+  schedules      WorkSchedule[]
+  raws           AttendanceRaw[]
+  timesheets     Timesheet[]
+  feedback       EmployeeFeedback[]
+  scopes         ManagerScope[]
+  history        EmployeeHistory[]
 
   @@index([departmentId, active])
+  @@index([departmentId, status])
+  @@index([currentShiftId, status])
   @@index([name])
   @@map("employees")
+}
+
+model EmployeeHistory {
+  id            String    @id @default(uuid()) @db.Uuid
+  employeeId    String    @db.Uuid
+  actorId       String?   @db.Uuid
+  action        String    @db.VarChar(100)
+  before        Json?
+  after         Json?
+  reason        String?   @db.VarChar(1000)
+  effectiveFrom DateTime? @db.Date
+  createdAt     DateTime  @default(now()) @db.Timestamptz(3)
+  employee      Employee  @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  actor         User?     @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId, createdAt])
+  @@index([actorId, createdAt])
+  @@map("employee_history")
 }
 
 model User {
@@ -105,6 +142,7 @@ model User {
   approvals          AttendanceApproval[]
   publications       TimesheetPublication[]
   auditLogs          AuditLog[]
+  employeeHistories  EmployeeHistory[]
 
   @@index([active, lockedUntil])
   @@map("users")
@@ -154,6 +192,7 @@ model Shift {
   updatedAt DateTime    @updatedAt @db.Timestamptz(3)
   rules     ShiftRule[]
   schedules WorkSchedule[]
+  currentEmployees Employee[] @relation("EmployeeCurrentShift")
 
   @@index([active])
   @@map("shifts")

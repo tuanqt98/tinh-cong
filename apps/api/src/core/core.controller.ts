@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Inject,
   Param,
@@ -9,7 +10,10 @@ import {
   Post,
   Query,
   StreamableFile,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { RoleCode } from '../generated/prisma/index.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
@@ -17,8 +21,11 @@ import { Roles } from '../auth/roles.decorator.js';
 import type { AuthenticatedUser } from '../auth/types.js';
 import {
   CalculatePreviewDto,
+  ConfirmEmployeeImportDto,
   CreateDepartmentDto,
   CreateEmployeeDto,
+  DeactivateEmployeeDto,
+  EmployeeQueryDto,
   CreatePeriodDto,
   CreateShiftDto,
   FeedbackDto,
@@ -51,8 +58,43 @@ export class CoreController {
 
   @Roles(RoleCode.ADMIN, RoleCode.HR, RoleCode.MANAGER)
   @Get('employees')
-  listEmployees(@CurrentUser() user: AuthenticatedUser, @Query() query: PaginationDto) {
+  listEmployees(@CurrentUser() user: AuthenticatedUser, @Query() query: EmployeeQueryDto) {
     return this.core.listEmployees(user, query);
+  }
+
+  @Roles(RoleCode.ADMIN, RoleCode.HR, RoleCode.MANAGER)
+  @Get('employees/statistics')
+  employeeStatistics(@CurrentUser() user: AuthenticatedUser) {
+    return this.core.employeeStatistics(user);
+  }
+
+  @Roles(RoleCode.ADMIN, RoleCode.HR)
+  @Get('employees/template')
+  async employeeTemplate() {
+    const buffer = await this.core.employeeTemplate();
+    return new StreamableFile(buffer, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: 'attachment; filename="mau-danh-sach-nhan-vien.xlsx"',
+    });
+  }
+
+  @Roles(RoleCode.ADMIN, RoleCode.HR)
+  @Post('employees/import/preview')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
+  previewEmployeeImport(
+    @CurrentUser() user: AuthenticatedUser,
+    @UploadedFile() file?: { buffer: Buffer; originalname: string },
+  ) {
+    return this.core.previewEmployeeImport(user, file);
+  }
+
+  @Roles(RoleCode.ADMIN, RoleCode.HR)
+  @Post('employees/import/confirm')
+  confirmEmployeeImport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ConfirmEmployeeImportDto,
+  ) {
+    return this.core.confirmEmployeeImport(user, dto);
   }
 
   @Roles(RoleCode.ADMIN, RoleCode.HR, RoleCode.MANAGER, RoleCode.EMPLOYEE)
@@ -61,16 +103,36 @@ export class CoreController {
     return this.core.getEmployee(user, id);
   }
 
+  @Roles(RoleCode.ADMIN, RoleCode.HR, RoleCode.MANAGER, RoleCode.EMPLOYEE)
+  @Get('employees/:id/history')
+  employeeHistory(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.core.employeeHistory(user, id);
+  }
+
   @Roles(RoleCode.ADMIN, RoleCode.HR)
   @Post('employees')
-  createEmployee(@Body() dto: CreateEmployeeDto) {
-    return this.core.createEmployee(dto);
+  createEmployee(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateEmployeeDto) {
+    return this.core.createEmployee(user, dto);
   }
 
   @Roles(RoleCode.ADMIN, RoleCode.HR)
   @Patch('employees/:id')
-  updateEmployee(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateEmployeeDto) {
-    return this.core.updateEmployee(id, dto);
+  updateEmployee(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateEmployeeDto,
+  ) {
+    return this.core.updateEmployee(user, id, dto);
+  }
+
+  @Roles(RoleCode.ADMIN, RoleCode.HR)
+  @Delete('employees/:id')
+  deactivateEmployee(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: DeactivateEmployeeDto,
+  ) {
+    return this.core.deactivateEmployee(user, id, body.reason);
   }
 
   @Roles(RoleCode.ADMIN, RoleCode.HR, RoleCode.MANAGER)

@@ -68,13 +68,24 @@ Quy ước trạng thái đánh giá lại:
 - **Chi tiết còn OPEN:** danh mục mã lỗi chặn đầy đủ; thứ tự hiển thị nhiều lỗi; vai trò/quyền và dữ liệu bắt buộc khi xử lý; điều kiện riêng của `NO_ATTENDANCE`.
 - **Tài liệu liên quan:** `01_BUSINESS_REQUIREMENTS.md`, `02_ATTENDANCE_RULES.md`, `04_DATABASE_DESIGN.md`, `07_WORKFLOW.md`, `08_TEST_CASES.md`, `12_OPEN_QUESTIONS.md`, `15_PHASE0_REAUDIT.md`.
 
+## DEC-007 – Q03/Q04/Q07: Dùng Tên ca trong file làm phân ca
+
+- **Trạng thái:** `CONFIRMED` cho nguồn import hiện tại.
+- **Ngày xác nhận:** 22/10/2026.
+- **Người xác nhận:** Chủ dự án.
+- **Nội dung:** Không quản lý lịch phân ca riêng cho dữ liệu import. Cột `Tên ca` trong bảy trường nguồn là bằng chứng phân ca của chính dòng dữ liệu; `Ngày chấm công` là ngày bắt đầu ca. `Ca1` ánh xạ `CA1`, `Ca3` ánh xạ `CA3`; giá trị trống, `--` hoặc alias khác không được tự suy diễn và phải chuyển ngoại lệ. Với dòng `Ca3` có ngày hợp lệ, đủ giờ vào/ra và giờ ra nhỏ hơn giờ vào, giờ ra thuộc D+1; các trường hợp thiếu hoặc mâu thuẫn vẫn fail-closed. Pipeline không tạo và không yêu cầu bản ghi `work_schedules`.
+- **Phạm vi ảnh hưởng:** liên kết import, chuẩn hóa timestamp, lựa chọn quy tắc ca, ngoại lệ và UI lịch sử import.
+- **Chi tiết còn OPEN:** Có cho phép tạo hồ sơ nhân viên/phòng ban từ tên và mã trong file hay không; alias ngoài đúng `Ca1`/`Ca3`; expected độc lập để UAT.
+- **Tài liệu liên quan:** `01_BUSINESS_REQUIREMENTS.md`, `02_ATTENDANCE_RULES.md`, `04_DATABASE_DESIGN.md`, `12_OPEN_QUESTIONS.md`, `13_PROGRESS_REPORT.md`.
+
 ## Tổng hợp
 
-| Quyết định | Đánh giá | Phần vẫn OPEN có ảnh hưởng chính |
-|---|---|---|
-| DEC-001 / Q03 | `CONFIRMED` | nguồn lịch và tiêu chí ánh xạ tin cậy |
-| DEC-002 / Q04 | `PARTIALLY_CONFIRMED` | tiêu chí suy ngày ra chi tiết |
-| DEC-003 / Q05 | `PARTIALLY_CONFIRMED; KEY CONFIRMED` | quy trình file sửa/file nhiều kỳ; khóa nhận diện trùng đã chốt |
-| DEC-004 / Q06 | `CONFIRMED` | thao tác HR sau khi xác nhận nhiều lượt |
-| DEC-005 / Q08 | `CONFIRMED` | quản trị cấu hình và mã lỗi chi tiết |
-| DEC-006 / Q12 | `CONFIRMED` | taxonomy lỗi chặn và quyền xử lý |
+| Quyết định            | Đánh giá                              | Phần vẫn OPEN có ảnh hưởng chính                                |
+| --------------------- | ------------------------------------- | --------------------------------------------------------------- |
+| DEC-001 / Q03         | `CONFIRMED`                           | nguồn lịch và tiêu chí ánh xạ tin cậy                           |
+| DEC-002 / Q04         | `PARTIALLY_CONFIRMED`                 | tiêu chí suy ngày ra chi tiết                                   |
+| DEC-003 / Q05         | `PARTIALLY_CONFIRMED; KEY CONFIRMED`  | quy trình file sửa/file nhiều kỳ; khóa nhận diện trùng đã chốt  |
+| DEC-004 / Q06         | `CONFIRMED`                           | thao tác HR sau khi xác nhận nhiều lượt                         |
+| DEC-005 / Q08         | `CONFIRMED`                           | quản trị cấu hình và mã lỗi chi tiết                            |
+| DEC-006 / Q12         | `CONFIRMED`                           | taxonomy lỗi chặn và quyền xử lý                                |
+| DEC-007 / Q03/Q04/Q07 | `CONFIRMED` cho nguồn import hiện tại | tạo master nhân viên từ file và alias khác `Ca1`/`Ca3` vẫn OPEN |

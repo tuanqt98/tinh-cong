@@ -10,7 +10,11 @@ interface RefreshResult {
 let refreshPromise: Promise<string> | null = null;
 
 export class ApiError extends Error {
-  constructor(public readonly status: number, message: string, public readonly payload?: unknown) {
+  constructor(
+    public readonly status: number,
+    message: string,
+    public readonly payload?: unknown,
+  ) {
     super(message);
   }
 }
@@ -76,6 +80,34 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     throw new ApiError(response.status, message, payload);
   }
   return response.json() as Promise<T>;
+}
+
+export async function apiBlob(path: string): Promise<Blob> {
+  const headers = new Headers();
+  const token = sessionStorage.getItem('access_token');
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  let response = await fetch(`${API_BASE}${path}`, { headers });
+  if (response.status === 401 && sessionStorage.getItem('refresh_token')) {
+    try {
+      refreshPromise ??= refreshAccessToken().finally(() => {
+        refreshPromise = null;
+      });
+      headers.set('Authorization', `Bearer ${await refreshPromise}`);
+      response = await fetch(`${API_BASE}${path}`, { headers });
+    } catch {
+      expireAuthSession();
+      throw new ApiError(401, 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+    }
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    const message =
+      typeof payload === 'object' && payload && 'message' in payload
+        ? String((payload as { message: unknown }).message)
+        : `Yêu cầu thất bại (${response.status})`;
+    throw new ApiError(response.status, message, payload);
+  }
+  return response.blob();
 }
 
 export function formatSeconds(value: number | null | undefined) {

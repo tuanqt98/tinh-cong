@@ -9,6 +9,7 @@ test-results/
 .env.*
 !.env.example
 *.log
+~$*.xlsx
 *.tsbuildinfo
 apps/api/src/generated/
 storage/uploads/*

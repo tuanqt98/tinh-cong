@@ -33,13 +33,11 @@ interface PreviewMetadata {
 }
 
 type RawRow = Prisma.AttendanceRawGetPayload<Record<string, never>>;
-type ScheduleWithShift = Prisma.WorkScheduleGetPayload<{
-  include: { shift: { include: { rules: true } } };
+type ShiftWithRules = Prisma.ShiftGetPayload<{
+  include: { rules: true };
 }>;
 
 type SupportedShiftCode = 'CA1' | 'CA3';
-
-const APPROVED_IMPORT_SOURCE_TYPE = 'APPROVED_XLSX_IMPORT';
 
 const SHIFT_DEFINITIONS: Record<
   SupportedShiftCode,
@@ -192,8 +190,8 @@ export class ImportsService {
     }
 
     if (duplicateIssues.length) {
-      await this.prisma.$transaction(async (tx) => {
-        await tx.attendanceImportIssue.createMany({
+      await this.prisma.$transaction([
+        this.prisma.attendanceImportIssue.createMany({
           data: duplicateIssues.map((issue) => ({
             importId: id,
             sheet: issue.row.sheet,
@@ -202,12 +200,12 @@ export class ImportsService {
             matchScope: issue.scope,
             evidence: { keyHash: issue.key },
           })),
-        });
-        await tx.attendanceImport.update({
+        }),
+        this.prisma.attendanceImport.update({
           where: { id },
           data: { status: 'REJECTED', rejectionReason: 'DUPLICATE_DETECTED' },
-        });
-        await tx.auditLog.create({
+        }),
+        this.prisma.auditLog.create({
           data: {
             actorId: user.id,
             action: 'IMPORT_REJECTED',
@@ -216,13 +214,13 @@ export class ImportsService {
             reason: 'DUPLICATE_DETECTED',
             after: { duplicateCount: duplicateIssues.length },
           },
-        });
-      });
+        }),
+      ]);
       return { id, status: 'REJECTED', duplicateCount: duplicateIssues.length };
     }
 
-    const accepted = await this.prisma.$transaction(async (tx) => {
-      await tx.attendanceRaw.createMany({
+    await this.prisma.$transaction([
+      this.prisma.attendanceRaw.createMany({
         data: keyedRows.map(({ row, key }) => ({
           importId: id,
           sheet: row.sheet,
@@ -237,12 +235,12 @@ export class ImportsService {
           rawCells: row.rawCells,
           sourceIdentityHash: key,
         })),
-      });
-      await tx.attendanceImport.update({
+      }),
+      this.prisma.attendanceImport.update({
         where: { id },
         data: { status: 'ACCEPTED', confirmedAt: new Date() },
-      });
-      await tx.auditLog.create({
+      }),
+      this.prisma.auditLog.create({
         data: {
           actorId: user.id,
           action: 'IMPORT_CONFIRMED',
@@ -250,9 +248,9 @@ export class ImportsService {
           entityId: id,
           after: { rowCount: keyedRows.length },
         },
-      });
-      return { id, status: 'ACCEPTED', rowCount: keyedRows.length };
-    });
+      }),
+    ]);
+    const accepted = { id, status: 'ACCEPTED' as const, rowCount: keyedRows.length };
     try {
       return { ...accepted, processing: await this.process(id, user) };
     } catch (error) {
@@ -408,6 +406,7 @@ export class ImportsService {
 
     const linkedRows: Array<RawRow & { employeeId: string }> = [];
     let missingEmployees = 0;
+    const missingEmployeeCodes = new Set<string>();
     for (const raw of record.rawRows) {
       const employeeId = employeeByCode.get(raw.employeeCode);
       if (!employeeId) {
@@ -422,6 +421,7 @@ export class ImportsService {
           existingKeys.add(key);
         }
         missingEmployees++;
+        missingEmployeeCodes.add(raw.employeeCode);
       } else {
         linkedRows.push({ ...raw, employeeId });
       }
@@ -440,6 +440,9 @@ export class ImportsService {
       rawRows: record.rawRows.length,
       linkedEmployees: linkedRows.length,
       missingEmployees,
+      missingEmployeeCodes: [...missingEmployeeCodes].sort((left, right) =>
+        left.localeCompare(right, 'vi-VN'),
+      ),
       promotedImportIssues: record.issues.length,
       ...calculationSummary,
     };
@@ -459,7 +462,7 @@ export class ImportsService {
     if (this.config.get<string>('SOURCE_MASTER_PROVISIONING_ENABLED') !== 'true') {
       throw new ConflictException({
         code: 'SOURCE_MASTER_APPROVAL_REQUIRED',
-        message: 'Chưa có phê duyệt master, lịch phân ca và tiêu chí timestamp cho dữ liệu nguồn.',
+        message: 'Chưa có phê duyệt tạo hồ sơ nhân viên/phòng ban từ dữ liệu nguồn.',
       });
     }
 
@@ -619,7 +622,6 @@ export class ImportsService {
           where: { code: { in: employeeCodes } },
           select: { id: true, code: true },
         });
-        const employeeByCode = new Map(employees.map((employee) => [employee.code, employee]));
         for (const employee of employees) {
           await tx.attendanceRaw.updateMany({
             where: { importId: id, employeeCode: employee.code },
@@ -627,7 +629,6 @@ export class ImportsService {
           });
         }
 
-        const shiftByCode = new Map<SupportedShiftCode, { id: string; code: string }>();
         for (const code of Object.keys(SHIFT_DEFINITIONS) as SupportedShiftCode[]) {
           const definition = SHIFT_DEFINITIONS[code];
           const shift = await tx.shift.upsert({
@@ -636,7 +637,6 @@ export class ImportsService {
             create: { code, name: definition.name, active: true },
             select: { id: true, code: true },
           });
-          shiftByCode.set(code, shift);
           await this.ensureApprovedRuleCoverage(tx, shift.id, code, sourceFrom, sourceTo);
         }
 
@@ -650,56 +650,12 @@ export class ImportsService {
           skipDuplicates: true,
         });
 
-        const candidates = record.rawRows.flatMap((raw) => {
-          const shiftCode = this.sourceShiftCode(raw.shiftNameRaw);
-          if (!shiftCode || !this.isIsoDate(raw.attendanceDateRaw) || multipleRowIds.has(raw.id))
-            return [];
-          const employee = employeeByCode.get(raw.employeeCode);
-          const shift = shiftByCode.get(shiftCode);
-          if (!employee || !shift) return [];
-          return [
-            {
-              employeeId: employee.id,
-              shiftId: shift.id,
-              shiftDate: new Date(`${raw.attendanceDateRaw}T00:00:00.000Z`),
-              sourceType: APPROVED_IMPORT_SOURCE_TYPE,
-              sourceRef: `import:${id}:raw:${raw.id}`,
-              version: 1,
-            },
-          ];
-        });
-        const existingSchedules = await tx.workSchedule.findMany({
-          where: {
-            employeeId: { in: employees.map((employee) => employee.id) },
-            shiftDate: {
-              gte: new Date(`${sourceFrom}T00:00:00.000Z`),
-              lte: new Date(`${sourceTo}T00:00:00.000Z`),
-            },
-            version: 1,
-          },
-        });
-        const existingScheduleByKey = new Map(
-          existingSchedules.map((schedule) => [
-            `${schedule.employeeId}\u0000${schedule.shiftDate.toISOString().slice(0, 10)}`,
-            schedule,
-          ]),
-        );
-        const scheduleConflicts = candidates.filter((candidate) => {
-          const key = `${candidate.employeeId}\u0000${candidate.shiftDate.toISOString().slice(0, 10)}`;
-          const existing = existingScheduleByKey.get(key);
-          return existing && existing.shiftId !== candidate.shiftId;
-        });
-        if (scheduleConflicts.length) {
-          throw new ConflictException({
-            code: 'WORK_SCHEDULE_CONFLICT',
-            message: `${scheduleConflicts.length} lịch hiện có mâu thuẫn với nguồn đã duyệt.`,
-          });
-        }
-        const newSchedules = candidates.filter((candidate) => {
-          const key = `${candidate.employeeId}\u0000${candidate.shiftDate.toISOString().slice(0, 10)}`;
-          return !existingScheduleByKey.has(key);
-        });
-        if (newSchedules.length) await tx.workSchedule.createMany({ data: newSchedules });
+        const sourceShiftAssignments = record.rawRows.filter(
+          (raw) =>
+            this.sourceShiftCode(raw.shiftNameRaw) &&
+            this.isIsoDate(raw.attendanceDateRaw) &&
+            !multipleRowIds.has(raw.id),
+        ).length;
 
         const existingMultipleExceptions = multipleRowIds.size
           ? await tx.attendanceException.findMany({
@@ -728,7 +684,7 @@ export class ImportsService {
         const summary = {
           departments: departments.length,
           employees: employees.length,
-          schedules: candidates.length,
+          sourceShiftAssignments,
           multipleRowExceptions: multipleRowIds.size,
           periods: periodKeys.length,
           sourceFrom,
@@ -737,10 +693,11 @@ export class ImportsService {
         await tx.auditLog.create({
           data: {
             actorId: user.id,
-            action: 'IMPORT_SOURCE_APPROVED_AND_MASTER_PROVISIONED',
+            action: 'IMPORT_SOURCE_MASTER_PROVISIONED',
             entity: 'AttendanceImport',
             entityId: id,
-            reason: 'Chủ dự án xác nhận master, alias ca, ngày bắt đầu ca và quy tắc Ca3 D+1.',
+            reason:
+              'Tạo hồ sơ nhân viên/phòng ban theo thao tác được bật; Tên ca trong file là nguồn phân ca, không tạo lịch phân ca riêng.',
             after: {
               ...summary,
               approval: {
@@ -748,6 +705,7 @@ export class ImportsService {
                 shiftAliases: { Ca1: 'CA1', Ca3: 'CA3' },
                 sourceDateIsShiftStartDate: true,
                 ca3CheckoutEarlierThanCheckinIsNextDay: true,
+                workScheduleRequired: false,
               },
             },
           },
@@ -797,28 +755,11 @@ export class ImportsService {
     if (!rows.length) {
       return { missingSchedules: 0, missingTimestampEvidence: 0, calculatedRows: 0 };
     }
-    const dateValues = rows.flatMap((row) =>
-      this.isIsoDate(row.attendanceDateRaw) ? [row.attendanceDateRaw!] : [],
-    );
-    const minDate = dateValues.length ? new Date(`${dateValues.sort()[0]}T00:00:00.000Z`) : null;
-    const maxDate = dateValues.length
-      ? new Date(`${dateValues.sort().at(-1)}T00:00:00.000Z`)
-      : null;
-    const schedules: ScheduleWithShift[] =
-      minDate && maxDate
-        ? await this.prisma.workSchedule.findMany({
-            where: {
-              employeeId: { in: [...new Set(rows.map((row) => row.employeeId))] },
-              shiftDate: { gte: minDate, lte: maxDate },
-            },
-            include: { shift: { include: { rules: true } } },
-          })
-        : [];
-    const scheduleByKey = new Map<string, ScheduleWithShift>();
-    for (const schedule of schedules.sort((a, b) => b.version - a.version)) {
-      const key = `${schedule.employeeId}\u0000${schedule.shiftDate.toISOString().slice(0, 10)}`;
-      if (!scheduleByKey.has(key)) scheduleByKey.set(key, schedule);
-    }
+    const shifts: ShiftWithRules[] = await this.prisma.shift.findMany({
+      where: { code: { in: Object.keys(SHIFT_DEFINITIONS) }, active: true },
+      include: { rules: true },
+    });
+    const shiftByCode = new Map(shifts.map((shift) => [shift.code, shift]));
     const periods = await this.prisma.attendancePeriod.findMany();
     const periodByKey = new Map(
       periods.map((period) => [`${period.year}-${period.month}`, period]),
@@ -835,11 +776,12 @@ export class ImportsService {
       rawIds.add(rawId);
       recovered.set(code, rawIds);
     };
-    let missingSchedules = 0;
     let missingTimestampEvidence = 0;
     let calculatedRows = 0;
 
     for (const raw of rows) {
+      markRecovered(raw.id, 'WORK_SCHEDULE_NOT_FOUND');
+      markRecovered(raw.id, 'SHIFT_MISMATCH');
       if (!this.isIsoDate(raw.attendanceDateRaw)) {
         await this.ensureRawException(raw.id, 'INVALID_SHIFT_DATE', true, existingKeys);
         continue;
@@ -866,31 +808,17 @@ export class ImportsService {
         );
         continue;
       }
-      const schedule = scheduleByKey.get(`${raw.employeeId}\u0000${shiftDate}`);
-      if (!schedule) {
-        await this.ensureRawException(raw.id, 'WORK_SCHEDULE_NOT_FOUND', true, existingKeys);
-        missingSchedules++;
-        continue;
-      }
-      markRecovered(raw.id, 'WORK_SCHEDULE_NOT_FOUND');
-      if (sourceShiftCode !== schedule.shift.code) {
-        await this.ensureRawException(raw.id, 'SHIFT_MISMATCH', true, existingKeys, {
-          sourceShift: raw.shiftNameRaw,
-          scheduledShift: schedule.shift.code,
-        });
-        continue;
-      }
-      markRecovered(raw.id, 'SHIFT_MISMATCH');
-      const timestamps = this.approvedSourceTimestamps(raw, schedule);
+      const shift = shiftByCode.get(sourceShiftCode);
+      const timestamps = this.approvedSourceTimestamps(raw, sourceShiftCode);
       if (!timestamps) {
         await this.ensureRawException(raw.id, 'TIMESTAMP_EVIDENCE_REQUIRED', true, existingKeys, {
-          reason: 'Thiếu giờ vào/ra hoặc nguồn lịch chưa được duyệt để gắn ngày cho timestamp.',
+          reason: 'Thiếu ngày/giờ vào-ra hợp lệ để tạo timestamp từ phân ca trong file.',
         });
         missingTimestampEvidence++;
         continue;
       }
       markRecovered(raw.id, 'TIMESTAMP_EVIDENCE_REQUIRED');
-      const rule = schedule.shift.rules
+      const rule = shift?.rules
         .filter((candidate) => candidate.effectiveFrom <= new Date(`${shiftDate}T00:00:00.000Z`))
         .filter(
           (candidate) =>
@@ -913,11 +841,14 @@ export class ImportsService {
       const result = calculateAttendance(
         {
           employeeCode: raw.employeeCode,
-          shiftCode: schedule.shift.code,
+          shiftCode: sourceShiftCode,
           shiftDate,
           checkInAt: timestamps.checkInAt,
           checkOutAt: timestamps.checkOutAt,
-          shiftDateEvidence: { type: 'WORK_SCHEDULE', reference: schedule.sourceRef },
+          shiftDateEvidence: {
+            type: 'APPROVED_MAPPING',
+            reference: `import:${raw.importId}:raw:${raw.id}:SOURCE_SHIFT_ASSIGNMENT`,
+          },
           checkOutDateEvidence: timestamps.checkOutDateEvidence,
         },
         {
@@ -941,7 +872,10 @@ export class ImportsService {
               ? null
               : new Date(result.checkOutEpochSeconds * 1000),
           shiftCode: result.shiftCode,
-          shiftDateEvidence: { type: 'WORK_SCHEDULE', reference: schedule.sourceRef },
+          shiftDateEvidence: {
+            type: 'APPROVED_MAPPING',
+            reference: `import:${raw.importId}:raw:${raw.id}:SOURCE_SHIFT_ASSIGNMENT`,
+          },
           checkOutDateEvidence: timestamps.checkOutDateEvidence,
           ruleVersion: `engine-${result.ruleVersion}`,
         },
@@ -953,7 +887,7 @@ export class ImportsService {
             shiftDate,
             checkIn: timestamps.checkInAt,
             checkOut: timestamps.checkOutAt,
-            shift: schedule.shift.code,
+            shift: sourceShiftCode,
             rule: rule.version,
           }),
         )
@@ -991,7 +925,7 @@ export class ImportsService {
       calculatedRows++;
     }
     await this.resolveRecoveredExceptions(actorId, recovered);
-    return { missingSchedules, missingTimestampEvidence, calculatedRows };
+    return { missingSchedules: 0, missingTimestampEvidence, calculatedRows };
   }
 
   private async ensureApprovedRuleCoverage(
@@ -1054,7 +988,7 @@ export class ImportsService {
     });
   }
 
-  private approvedSourceTimestamps(raw: RawRow, schedule: ScheduleWithShift) {
+  private approvedSourceTimestamps(raw: RawRow, shiftCode: SupportedShiftCode) {
     if (this.isFullOffsetTimestamp(raw.checkInRaw) && this.isFullOffsetTimestamp(raw.checkOutRaw)) {
       return {
         checkInAt: raw.checkInRaw,
@@ -1065,15 +999,10 @@ export class ImportsService {
         },
       };
     }
-    if (
-      schedule.sourceType !== APPROVED_IMPORT_SOURCE_TYPE ||
-      !this.isIsoDate(raw.attendanceDateRaw)
-    )
-      return null;
+    if (!this.isIsoDate(raw.attendanceDateRaw)) return null;
     const checkIn = this.timeOnly(raw.checkInRaw);
     const checkOut = this.timeOnly(raw.checkOutRaw);
-    const shiftCode = this.sourceShiftCode(raw.shiftNameRaw);
-    if (!checkIn || !checkOut || !shiftCode || shiftCode !== schedule.shift.code) return null;
+    if (!checkIn || !checkOut || this.sourceShiftCode(raw.shiftNameRaw) !== shiftCode) return null;
 
     const checkoutDate =
       shiftCode === 'CA3' && checkOut.seconds < checkIn.seconds
@@ -1086,8 +1015,8 @@ export class ImportsService {
         type: 'APPROVED_MAPPING' as const,
         reference:
           shiftCode === 'CA3' && checkoutDate !== raw.attendanceDateRaw
-            ? `${schedule.sourceRef}:CA3_D_PLUS_1`
-            : `${schedule.sourceRef}:SOURCE_SHIFT_DATE`,
+            ? `import:${raw.importId}:raw:${raw.id}:CA3_D_PLUS_1`
+            : `import:${raw.importId}:raw:${raw.id}:SOURCE_SHIFT_DATE`,
       },
     };
   }

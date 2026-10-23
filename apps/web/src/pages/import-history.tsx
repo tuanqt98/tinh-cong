@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { AlertTriangle, Users } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import {
   Badge,
   Button,
@@ -56,6 +58,7 @@ interface ProcessingSummary {
   rawRows: number;
   linkedEmployees: number;
   missingEmployees: number;
+  missingEmployeeCodes: string[];
   promotedImportIssues: number;
   missingSchedules: number;
   missingTimestampEvidence: number;
@@ -117,6 +120,7 @@ function RawRows({ importId }: { importId: string }) {
 
 export function ImportHistory() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const history = useApiQuery<HistoryResponse>(['imports'], '/imports?pageSize=20');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
@@ -150,7 +154,8 @@ export function ImportHistory() {
         <div className="mb-4">
           <h2 className="text-base font-semibold sm:text-lg">Lịch sử và dữ liệu đã import</h2>
           <p className="text-sm text-slate-500">
-            Dữ liệu raw được giữ nguyên; chỉ tính công khi đủ hồ sơ, lịch và evidence.
+            Dữ liệu raw được giữ nguyên; Tên ca lấy từ file, chỉ tính công khi đủ hồ sơ nhân viên và
+            evidence thời gian.
           </p>
         </div>
         {error && (
@@ -158,16 +163,55 @@ export function ImportHistory() {
             <ErrorState message={error} />
           </div>
         )}
-        {summary && (
-          <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
-            Đã xử lý {summary.rawRows.toLocaleString()} dòng:{' '}
-            {summary.linkedEmployees.toLocaleString()} liên kết nhân viên,{' '}
-            {summary.calculatedRows.toLocaleString()} đã tính,{' '}
-            {summary.missingEmployees.toLocaleString()} thiếu hồ sơ nhân viên,{' '}
-            {summary.promotedImportIssues.toLocaleString()} cảnh báo nguồn được chuyển sang Ngoại
-            lệ.
-          </div>
-        )}
+        {summary &&
+          (summary.missingEmployees > 0 ? (
+            <div
+              role="alert"
+              className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"
+            >
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold">
+                    Thiếu {summary.missingEmployeeCodes.length.toLocaleString()} mã nhân viên đang
+                    hoạt động
+                  </p>
+                  <p className="mt-1 text-xs text-amber-800">
+                    {summary.missingEmployees.toLocaleString()} dòng chưa được liên kết. Hệ thống
+                    không tự tạo nhân viên; các dòng đã đủ hồ sơ vẫn được xử lý.
+                  </p>
+                  {summary.missingEmployeeCodes.length > 0 && (
+                    <div className="mt-3 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">
+                      {summary.missingEmployeeCodes.map((code) => (
+                        <span
+                          key={code}
+                          className="rounded-md border border-amber-200 bg-white px-2 py-1 font-mono text-xs"
+                        >
+                          {code}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <Button size="sm" onClick={() => navigate('/employees')}>
+                      <Users className="h-4 w-4" /> Mở Quản lý nhân viên
+                    </Button>
+                    <span className="text-xs text-amber-800">
+                      Sau khi bổ sung, quay lại và bấm Xử lý dữ liệu lần nữa.
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
+              Đã xử lý {summary.rawRows.toLocaleString()} dòng:{' '}
+              {summary.linkedEmployees.toLocaleString()} dòng đã liên kết,{' '}
+              {summary.calculatedRows.toLocaleString()} đã tính và{' '}
+              {summary.promotedImportIssues.toLocaleString()} cảnh báo nguồn được chuyển sang Ngoại
+              lệ.
+            </div>
+          ))}
         {history.isLoading ? (
           <Skeleton className="h-48" />
         ) : history.isError ? (
@@ -202,9 +246,9 @@ export function ImportHistory() {
                         size="sm"
                         variant="secondary"
                         disabled
-                        title="Chờ HR/chủ dự án duyệt master, lịch phân ca và tiêu chí timestamp"
+                        title="Chờ HR/chủ dự án duyệt tạo hồ sơ nhân viên/phòng ban từ file"
                       >
-                        Chờ duyệt master/lịch
+                        Chờ duyệt hồ sơ NV
                       </Button>
                     </div>
                   </td>

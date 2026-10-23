@@ -1,7 +1,9 @@
 import { Type } from 'class-transformer';
 import {
-  IsBoolean,
+  ArrayMaxSize,
+  IsArray,
   IsEnum,
+  IsIn,
   IsInt,
   IsISO8601,
   IsNotEmpty,
@@ -12,8 +14,9 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
-import { PeriodStatus, RoleCode } from '../generated/prisma/index.js';
+import { EmployeeStatus, PeriodStatus, RoleCode } from '../generated/prisma/index.js';
 
 export class PaginationDto {
   @IsOptional()
@@ -33,6 +36,24 @@ export class PaginationDto {
   @IsString()
   @MaxLength(255)
   search?: string;
+}
+
+export class EmployeeQueryDto extends PaginationDto {
+  @IsOptional()
+  @IsUUID()
+  departmentId?: string;
+
+  @IsOptional()
+  @IsEnum(EmployeeStatus)
+  status?: EmployeeStatus;
+
+  @IsOptional()
+  @IsIn(['code', 'name', 'department', 'status'])
+  sortBy: 'code' | 'name' | 'department' | 'status' = 'code';
+
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  sortOrder: 'asc' | 'desc' = 'asc';
 }
 
 export class CreateDepartmentDto {
@@ -58,9 +79,11 @@ export class CreateEmployeeDto {
   @MaxLength(255)
   name: string;
 
-  @IsOptional()
   @IsUUID()
-  departmentId?: string;
+  departmentId: string;
+
+  @IsEnum(EmployeeStatus)
+  status: EmployeeStatus;
 }
 
 export class UpdateEmployeeDto {
@@ -74,8 +97,30 @@ export class UpdateEmployeeDto {
   departmentId?: string;
 
   @IsOptional()
-  @IsBoolean()
-  active?: boolean;
+  @IsEnum(EmployeeStatus)
+  status?: EmployeeStatus;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  reason?: string;
+}
+
+export class EmployeeImportRowDto extends CreateEmployeeDto {}
+
+export class ConfirmEmployeeImportDto {
+  @IsArray()
+  @ArrayMaxSize(5000)
+  @ValidateNested({ each: true })
+  @Type(() => EmployeeImportRowDto)
+  rows: EmployeeImportRowDto[];
+}
+
+export class DeactivateEmployeeDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  reason?: string;
 }
 
 export class CreatePeriodDto {

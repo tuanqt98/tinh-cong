@@ -46,6 +46,7 @@ interface ConfirmResult {
     rawRows?: number;
     linkedEmployees?: number;
     missingEmployees?: number;
+    missingEmployeeCodes?: string[];
     promotedImportIssues?: number;
     calculatedRows?: number;
   };
@@ -126,7 +127,9 @@ export function ImportsPage() {
         result.status === 'ACCEPTED'
           ? result.processing?.status === 'FAILED'
             ? `Import thành công ${result.rowCount?.toLocaleString() ?? preview.rowCount.toLocaleString()} dòng raw; bước xử lý cần chạy lại trong Lịch sử import.`
-            : `Import thành công ${result.rowCount?.toLocaleString() ?? preview.rowCount.toLocaleString()} dòng; cảnh báo đã được chuyển sang Ngoại lệ.`
+            : result.processing?.missingEmployees
+              ? `Import thành công ${result.rowCount?.toLocaleString() ?? preview.rowCount.toLocaleString()} dòng; còn ${result.processing.missingEmployeeCodes?.length ?? 0} mã nhân viên thiếu hồ sơ. Mở Lịch sử import để xem và bổ sung.`
+              : `Import thành công ${result.rowCount?.toLocaleString() ?? preview.rowCount.toLocaleString()} dòng; cảnh báo đã được chuyển sang Ngoại lệ.`
           : `Import bị từ chối do phát hiện ${result.duplicateCount ?? 0} dòng trùng. Không có dữ liệu nào được ghi.`,
       );
       await queryClient.invalidateQueries({ queryKey: ['imports'] });

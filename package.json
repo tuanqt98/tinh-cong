@@ -12,7 +12,7 @@
   "scripts": {
     "build": "pnpm -r --if-present build",
     "dev": "pnpm --parallel --filter @tinh-cong/api --filter @tinh-cong/web dev",
-    "lint": "pnpm -r --if-present lint",
+    "lint": "eslint . --max-warnings 0",
     "test": "pnpm -r --if-present test",
     "test:run": "pnpm -r --if-present test:run",
     "test:engine": "pnpm --filter @tinh-cong/attendance-engine test:run",
@@ -27,11 +27,16 @@
     "format:check": "prettier --check ."
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "1.55.1",
     "@prisma/client": "6.19.0",
+    "eslint": "^10.13.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
     "prettier": "3.6.2",
     "prisma": "6.19.0",
     "typescript": "5.9.3",
+    "typescript-eslint": "^8.72.0",
     "vitest": "3.2.4"
   }
 }

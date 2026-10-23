@@ -1,6 +1,8 @@
 import { createRequire } from 'node:module';
+import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -11,13 +13,21 @@ import { ConfigService } from '@nestjs/config';
 import { calculateAttendance } from '@tinh-cong/attendance-engine';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
-import { ExceptionStatus, PeriodStatus, Prisma, RoleCode } from '../generated/prisma/index.js';
+import {
+  EmployeeStatus,
+  ExceptionStatus,
+  PeriodStatus,
+  Prisma,
+  RoleCode,
+} from '../generated/prisma/index.js';
 import type { AuthenticatedUser } from '../auth/types.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type {
   CalculatePreviewDto,
+  ConfirmEmployeeImportDto,
   CreateDepartmentDto,
   CreateEmployeeDto,
+  EmployeeQueryDto,
   CreatePeriodDto,
   CreateShiftDto,
   FeedbackDto,
@@ -120,7 +130,9 @@ export class CoreService {
     };
   }
 
-  async listEmployees(user: AuthenticatedUser, query: PaginationDto) {
+  async listEmployees(user: AuthenticatedUser, query: EmployeeQueryDto) {
+    const page = Number(query.page);
+    const pageSize = Number(query.pageSize);
     const scope = await this.employeeScope(user);
     const where: Prisma.EmployeeWhereInput = {
       AND: [
@@ -133,51 +145,194 @@ export class CoreService {
               ],
             }
           : {},
+        query.departmentId ? { departmentId: query.departmentId } : {},
+        query.status ? { status: query.status } : {},
       ],
     };
+    const direction = query.sortOrder ?? 'asc';
+    const orderBy: Prisma.EmployeeOrderByWithRelationInput[] =
+      query.sortBy === 'name'
+        ? [{ name: direction }, { code: 'asc' }]
+        : query.sortBy === 'department'
+          ? [{ department: { name: direction } }, { code: 'asc' }]
+          : query.sortBy === 'status'
+            ? [{ status: direction }, { code: 'asc' }]
+            : [{ code: direction }];
     const [items, total] = await this.prisma.$transaction([
       this.prisma.employee.findMany({
         where,
-        include: { department: true },
-        orderBy: [{ active: 'desc' }, { code: 'asc' }],
-        skip: (query.page - 1) * query.pageSize,
-        take: query.pageSize,
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          departmentId: true,
+          status: true,
+          department: true,
+        },
+        orderBy,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
       }),
       this.prisma.employee.count({ where }),
     ]);
-    return { items, total, page: query.page, pageSize: query.pageSize };
+    return { items, total, page, pageSize };
+  }
+
+  async employeeStatistics(user: AuthenticatedUser) {
+    const scope = await this.employeeScope(user);
+    const groups = await this.prisma.employee.groupBy({
+      by: ['status'],
+      where: scope,
+      _count: { _all: true },
+    });
+    const counts: Record<EmployeeStatus, number> = {
+      ACTIVE: 0,
+      ON_LEAVE: 0,
+      RESIGNED: 0,
+    };
+    for (const group of groups) counts[group.status] = group._count._all;
+    return { total: Object.values(counts).reduce((sum, value) => sum + value, 0), ...counts };
   }
 
   async getEmployee(user: AuthenticatedUser, id: string) {
     const employee = await this.prisma.employee.findFirst({
       where: { id, AND: [await this.employeeScope(user)] },
-      include: { department: true },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        departmentId: true,
+        status: true,
+        department: true,
+      },
     });
     if (!employee) throw new NotFoundException();
     return employee;
   }
 
-  createEmployee(dto: CreateEmployeeDto) {
-    return this.prisma.employee.create({
-      data: {
-        code: dto.code.trim(),
-        name: dto.name.trim(),
-        ...(dto.departmentId ? { departmentId: dto.departmentId } : {}),
-      },
-      include: { department: true },
+  async employeeHistory(user: AuthenticatedUser, id: string) {
+    await this.getEmployee(user, id);
+    return this.prisma.employeeHistory.findMany({
+      where: { employeeId: id },
+      include: { actor: { select: { id: true, username: true } } },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
-  updateEmployee(id: string, dto: UpdateEmployeeDto) {
-    return this.prisma.employee.update({
-      where: { id },
-      data: {
-        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
-        ...(dto.departmentId !== undefined ? { departmentId: dto.departmentId } : {}),
-        ...(dto.active !== undefined ? { active: dto.active } : {}),
-      },
-      include: { department: true },
+  async createEmployee(user: AuthenticatedUser, dto: CreateEmployeeDto) {
+    await this.assertDepartmentManaged(user, dto.departmentId);
+    await this.assertReferenceData(dto.departmentId);
+    const code = dto.code.trim();
+    if (await this.prisma.employee.findUnique({ where: { code }, select: { id: true } })) {
+      throw new ConflictException({
+        code: 'EMPLOYEE_CODE_EXISTS',
+        message: 'Mã nhân viên đã tồn tại.',
+      });
+    }
+    const data = this.employeeCreateData(dto);
+    return this.prisma.$transaction(async (tx) => {
+      const employee = await tx.employee.create({
+        data,
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          departmentId: true,
+          status: true,
+          department: true,
+        },
+      });
+      const after = this.employeeSnapshot(employee);
+      await tx.employeeHistory.create({
+        data: {
+          employeeId: employee.id,
+          actorId: user.id,
+          action: 'EMPLOYEE_CREATED',
+          after,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: user.id,
+          action: 'EMPLOYEE_CREATED',
+          entity: 'Employee',
+          entityId: employee.id,
+          after,
+        },
+      });
+      return employee;
     });
+  }
+
+  async updateEmployee(user: AuthenticatedUser, id: string, dto: UpdateEmployeeDto) {
+    if (dto.name === undefined && dto.departmentId === undefined && dto.status === undefined) {
+      throw new BadRequestException('Yêu cầu cập nhật không có trường hồ sơ hợp lệ.');
+    }
+    const current = await this.getEmployee(user, id);
+    if (dto.departmentId) {
+      await this.assertDepartmentManaged(user, dto.departmentId);
+      await this.assertReferenceData(dto.departmentId);
+    }
+    const data: Prisma.EmployeeUpdateInput = {
+      ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+      ...(dto.departmentId !== undefined
+        ? { department: { connect: { id: dto.departmentId } } }
+        : {}),
+      ...(dto.status !== undefined
+        ? { status: dto.status, active: dto.status === EmployeeStatus.ACTIVE }
+        : {}),
+    };
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.employee.update({
+        where: { id },
+        data,
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          departmentId: true,
+          status: true,
+          department: true,
+        },
+      });
+      const before = this.employeeSnapshot(current);
+      const after = this.employeeSnapshot(updated);
+      await tx.employeeHistory.create({
+        data: {
+          employeeId: id,
+          actorId: user.id,
+          action: 'EMPLOYEE_UPDATED',
+          before,
+          after,
+          ...(dto.reason ? { reason: dto.reason.trim() } : {}),
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: user.id,
+          action: 'EMPLOYEE_UPDATED',
+          entity: 'Employee',
+          entityId: id,
+          before,
+          after,
+          ...(dto.reason ? { reason: dto.reason.trim() } : {}),
+        },
+      });
+      return updated;
+    });
+  }
+
+  async deactivateEmployee(user: AuthenticatedUser, id: string, reason?: string) {
+    const current = await this.getEmployee(user, id);
+    const attendanceRecords = await this.prisma.attendanceRaw.count({ where: { employeeId: id } });
+    if (current.status === EmployeeStatus.RESIGNED) {
+      return { ...current, attendanceRecords, preservedAttendance: true };
+    }
+    const updated = await this.updateEmployee(user, id, {
+      status: EmployeeStatus.RESIGNED,
+      reason: reason?.trim() || 'Ngừng hoạt động từ màn quản lý nhân viên.',
+    });
+    return { ...updated, attendanceRecords, preservedAttendance: true };
   }
 
   listDepartments() {
@@ -188,6 +343,216 @@ export class CoreService {
     return this.prisma.department.create({
       data: { code: dto.code.trim(), name: dto.name.trim() },
     });
+  }
+
+  async employeeTemplate() {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Hệ thống chấm công In Nhật Hàn';
+    const sheet = workbook.addWorksheet('NhanVien');
+    const headers = ['Mã nhân viên', 'Tên nhân viên', 'Phòng ban', 'Trạng thái'];
+    sheet.addRow(headers);
+    sheet.addRow(['SYN-NV001', 'Nguyễn Văn Mẫu', 'SYN-FACTORY', 'ACTIVE']);
+    sheet.columns = headers.map((header) => ({ header, width: Math.max(16, header.length + 4) }));
+    sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1769D2' } };
+    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+    sheet.autoFilter = { from: 'A1', to: 'D1' };
+
+    const guide = workbook.addWorksheet('HuongDan');
+    guide.columns = [{ width: 24 }, { width: 80 }];
+    guide.addRows([
+      ['Cột', 'Hướng dẫn'],
+      ['Mã nhân viên', 'Bắt buộc và không được trùng trong file hoặc trong hệ thống.'],
+      ['Tên nhân viên', 'Bắt buộc.'],
+      ['Phòng ban', 'Nhập mã phòng ban đang hoạt động; cũng chấp nhận tên phòng ban duy nhất.'],
+      ['Trạng thái', 'ACTIVE, ON_LEAVE hoặc RESIGNED.'],
+      ['Chính sách trùng', 'Chỉ nhập nhân viên mới. Mã đã tồn tại sẽ chặn toàn bộ lần import.'],
+      ['Dữ liệu mẫu', 'Toàn bộ dữ liệu ví dụ là synthetic, không phải thông tin cá nhân thật.'],
+    ]);
+    guide.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    guide.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1769D2' } };
+    return Buffer.from(await workbook.xlsx.writeBuffer());
+  }
+
+  async previewEmployeeImport(
+    user: AuthenticatedUser,
+    file?: { buffer: Buffer; originalname: string },
+  ) {
+    if (!file) throw new BadRequestException('Chưa chọn file Excel.');
+    if (!/\.xlsx$/i.test(file.originalname)) {
+      throw new BadRequestException('Chỉ hỗ trợ file Excel .xlsx.');
+    }
+    const workbook = new ExcelJS.Workbook();
+    try {
+      await workbook.xlsx.load(file.buffer as never);
+    } catch {
+      throw new BadRequestException('Không thể đọc file Excel.');
+    }
+    const sheet = workbook.worksheets[0];
+    if (!sheet) throw new BadRequestException('File Excel không có worksheet.');
+    const expectedHeaders = ['Mã nhân viên', 'Tên nhân viên', 'Phòng ban', 'Trạng thái'];
+    const actualHeaders = expectedHeaders.map((_, index) =>
+      this.excelText(sheet.getRow(1).getCell(index + 1).value),
+    );
+    const hasExtraHeaders = Array.from(
+      { length: Math.max(0, sheet.getRow(1).cellCount - expectedHeaders.length) },
+      (_, index) =>
+        this.excelText(sheet.getRow(1).getCell(expectedHeaders.length + index + 1).value),
+    ).some(Boolean);
+    if (
+      expectedHeaders.some(
+        (header, index) =>
+          actualHeaders[index] !== header && !(index === 1 && actualHeaders[index] === 'Họ và tên'),
+      ) ||
+      hasExtraHeaders
+    ) {
+      throw new BadRequestException({
+        code: 'INVALID_EMPLOYEE_IMPORT_HEADERS',
+        message: 'Header file nhân viên không đúng mẫu.',
+        expectedHeaders,
+      });
+    }
+
+    const [departments, existingEmployees, managedDepartmentIds] = await Promise.all([
+      this.prisma.department.findMany({
+        where: { active: true },
+        select: { id: true, code: true, name: true },
+      }),
+      this.prisma.employee.findMany({ select: { code: true } }),
+      this.managedDepartmentIds(user),
+    ]);
+    const departmentByCode = new Map<string, (typeof departments)[number]>();
+    const departmentsByName = new Map<string, Array<(typeof departments)[number]>>();
+    for (const department of departments) {
+      departmentByCode.set(department.code.toLocaleUpperCase('vi-VN'), department);
+      const nameKey = department.name.toLocaleUpperCase('vi-VN');
+      departmentsByName.set(nameKey, [...(departmentsByName.get(nameKey) ?? []), department]);
+    }
+    const existingCodes = new Set(
+      existingEmployees.map((item) => item.code.toLocaleUpperCase('vi-VN')),
+    );
+    const seenCodes = new Set<string>();
+    const errors: Array<{ row: number; field: string; message: string }> = [];
+    const rows: CreateEmployeeDto[] = [];
+    let dataRowCount = 0;
+
+    for (let rowNo = 2; rowNo <= sheet.rowCount; rowNo++) {
+      const row = sheet.getRow(rowNo);
+      const values = Array.from({ length: 4 }, (_, index) =>
+        this.excelText(row.getCell(index + 1).value),
+      );
+      if (values.every((value) => !value)) continue;
+      dataRowCount += 1;
+      const [rawCode = '', rawName = '', rawDepartment = '', rawStatus = ''] = values;
+      const code = rawCode.trim();
+      const name = rawName.trim();
+      const departmentKey = rawDepartment.trim().toLocaleUpperCase('vi-VN');
+      const departmentsWithName = departmentsByName.get(departmentKey) ?? [];
+      const department =
+        departmentByCode.get(departmentKey) ??
+        (departmentsWithName.length === 1 ? departmentsWithName[0] : undefined);
+      const status = rawStatus.trim().toLocaleUpperCase('vi-VN') as EmployeeStatus;
+      const codeKey = code.toLocaleUpperCase('vi-VN');
+      if (!code) errors.push({ row: rowNo, field: 'code', message: 'Mã nhân viên là bắt buộc.' });
+      if (!name) errors.push({ row: rowNo, field: 'name', message: 'Tên nhân viên là bắt buộc.' });
+      if (!department) {
+        const departmentValue = rawDepartment.trim();
+        errors.push({
+          row: rowNo,
+          field: 'department',
+          message: !departmentValue
+            ? 'Phòng ban là bắt buộc.'
+            : departmentsWithName.length > 1
+              ? `Tên phòng ban "${departmentValue}" không duy nhất; vui lòng dùng mã phòng ban.`
+              : `Phòng ban "${departmentValue}" chưa tồn tại hoặc không hoạt động trong hệ thống.`,
+        });
+      }
+      if (department && managedDepartmentIds && !managedDepartmentIds.has(department.id)) {
+        errors.push({
+          row: rowNo,
+          field: 'department',
+          message: 'Phòng ban nằm ngoài phạm vi được cấp quyền.',
+        });
+      }
+      if (!Object.values(EmployeeStatus).includes(status))
+        errors.push({ row: rowNo, field: 'status', message: 'Trạng thái không hợp lệ.' });
+      if (existingCodes.has(codeKey))
+        errors.push({ row: rowNo, field: 'code', message: 'Mã nhân viên đã tồn tại.' });
+      if (seenCodes.has(codeKey))
+        errors.push({ row: rowNo, field: 'code', message: 'Mã nhân viên bị trùng trong file.' });
+      seenCodes.add(codeKey);
+      if (department && Object.values(EmployeeStatus).includes(status)) {
+        rows.push({
+          code,
+          name,
+          departmentId: department.id,
+          status,
+        });
+      }
+    }
+    if (rows.length === 0 && errors.length === 0) {
+      errors.push({ row: 0, field: 'file', message: 'File không có dòng nhân viên.' });
+    }
+    return {
+      fileName: file.originalname,
+      rowCount: dataRowCount,
+      rows,
+      errors,
+      canConfirm: errors.length === 0,
+    };
+  }
+
+  async confirmEmployeeImport(user: AuthenticatedUser, dto: ConfirmEmployeeImportDto) {
+    if (dto.rows.length === 0) throw new BadRequestException('Không có nhân viên để import.');
+    const codes = dto.rows.map((row) => row.code.trim());
+    if (new Set(codes.map((code) => code.toLocaleUpperCase('vi-VN'))).size !== codes.length) {
+      throw new ConflictException('File import có mã nhân viên trùng nhau.');
+    }
+    const existing = await this.prisma.employee.findMany({
+      where: { code: { in: codes } },
+      select: { code: true },
+    });
+    if (existing.length) {
+      throw new ConflictException({
+        code: 'EMPLOYEE_IMPORT_CONFLICT',
+        message: 'Import bị chặn vì có mã nhân viên đã tồn tại.',
+        employeeCodes: existing.map((item) => item.code),
+      });
+    }
+    for (const row of dto.rows) {
+      await this.assertDepartmentManaged(user, row.departmentId);
+      await this.assertReferenceData(row.departmentId);
+    }
+    const batchId = randomUUID();
+    const preparedRows = dto.rows.map((row) => ({
+      id: randomUUID(),
+      source: row,
+      data: this.employeeCreateData(row) satisfies Prisma.EmployeeCreateManyInput,
+    }));
+    const employeeRows = preparedRows.map((row) => ({ ...row.data, id: row.id }));
+    await this.prisma.$transaction([
+      this.prisma.employee.createMany({ data: employeeRows }),
+      this.prisma.employeeHistory.createMany({
+        data: preparedRows.map((row) => ({
+          id: randomUUID(),
+          employeeId: row.id,
+          actorId: user.id,
+          action: 'EMPLOYEE_IMPORTED',
+          after: { id: row.id, ...row.data } as Prisma.InputJsonValue,
+          reason: `Employee import batch ${batchId}`,
+        })),
+      }),
+      this.prisma.auditLog.create({
+        data: {
+          actorId: user.id,
+          action: 'EMPLOYEE_IMPORT_CONFIRMED',
+          entity: 'EmployeeImport',
+          entityId: batchId,
+          after: { rowCount: employeeRows.length, employeeIds: preparedRows.map((row) => row.id) },
+        },
+      }),
+    ]);
+    return { batchId, imported: employeeRows.length };
   }
 
   listPeriods() {
@@ -576,6 +941,79 @@ export class CoreService {
       .text(JSON.stringify(timesheet.snapshot, null, 2), { width: 510 });
     document.end();
     return completed;
+  }
+
+  private employeeCreateData(dto: CreateEmployeeDto): Prisma.EmployeeUncheckedCreateInput {
+    return {
+      code: dto.code.trim(),
+      name: dto.name.trim(),
+      departmentId: dto.departmentId,
+      status: dto.status,
+      active: dto.status === EmployeeStatus.ACTIVE,
+    };
+  }
+
+  private employeeSnapshot(employee: {
+    id: string;
+    code: string;
+    name: string;
+    departmentId: string | null;
+    status: EmployeeStatus;
+  }): Prisma.InputJsonObject {
+    return {
+      id: employee.id,
+      code: employee.code,
+      name: employee.name,
+      departmentId: employee.departmentId,
+      status: employee.status,
+    };
+  }
+
+  private excelText(value: ExcelJS.CellValue) {
+    if (value === null || value === undefined) return '';
+    if (value instanceof Date) return value.toISOString().slice(0, 10);
+    if (typeof value === 'object') {
+      if ('formula' in value) return '';
+      if ('text' in value) return String(value.text).trim();
+      if ('richText' in value)
+        return value.richText
+          .map((part) => part.text)
+          .join('')
+          .trim();
+      return '';
+    }
+    return String(value).trim();
+  }
+
+  private async managedDepartmentIds(user: AuthenticatedUser): Promise<Set<string> | null> {
+    if (user.roles.includes(RoleCode.ADMIN)) return null;
+    const scopes = await this.prisma.managerScope.findMany({
+      where: {
+        userId: user.id,
+        effectiveFrom: { lte: new Date() },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gt: new Date() } }],
+        departmentId: { not: null },
+      },
+      select: { departmentId: true },
+    });
+    return new Set(scopes.flatMap((scope) => (scope.departmentId ? [scope.departmentId] : [])));
+  }
+
+  private async assertDepartmentManaged(user: AuthenticatedUser, departmentId: string) {
+    const managed = await this.managedDepartmentIds(user);
+    if (managed && !managed.has(departmentId)) {
+      throw new ForbiddenException('Phòng ban nằm ngoài phạm vi được cấp quyền.');
+    }
+  }
+
+  private async assertReferenceData(departmentId: string | null) {
+    const department = departmentId
+      ? await this.prisma.department.findFirst({
+          where: { id: departmentId, active: true },
+          select: { id: true },
+        })
+      : null;
+    if (departmentId && !department) throw new BadRequestException('Phòng ban không hợp lệ.');
   }
 
   private safeExcelText(value: string) {

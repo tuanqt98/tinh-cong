@@ -1,6 +1,6 @@
 # Trạng thái dự án Hệ thống chấm công In Nhật Hàn
 
-Ngày cập nhật: 22/10/2026 (`Asia/Ho_Chi_Minh`).
+Ngày cập nhật: 23/10/2026 (`Asia/Ho_Chi_Minh`).
 Checkpoint: **`DEVELOPMENT_COMPLETE_WITH_BLOCKERS`** (Không production-ready).
 
 ## 1. Tổng quan trạng thái
@@ -14,16 +14,17 @@ Hệ thống được bảo vệ bằng các chốt chặn an toàn (fail-closed
 | Hạng mục kiểm thử                | Lệnh thực hiện                                       | Kết quả thực tế                 | Ghi chú                                                                                              |
 | -------------------------------- | ---------------------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | **Engine Unit Tests**            | `pnpm.cmd test:run` (engine)                         | **31/31 PASS** (2 files)        | Tính công số nguyên giây, bảo toàn tier, Ca 1/Ca 3, đi muộn/về sớm độc lập                           |
-| **API Unit & Service Tests**     | `pnpm.cmd test:run` (api)                            | **23/23 PASS** (6 files)        | RBAC/scope, Excel parser, duplicate/confirm/process policy, source approval guard, audit, PDF export |
-| **PostgreSQL Integration Tests** | migration + seed DB mới; `pnpm.cmd test:integration` | **5/5 PASS** (1 file)           | PostgreSQL 16 thật, RBAC, IDOR isolation, workflow và source provisioning guard                      |
-| **Browser E2E Tests**            | `pnpm.cmd test:e2e`                                  | **9/9 PASS** (Chromium)         | Đăng nhập, 12 màn hình, mobile, refresh, confirm một lần, raw history, visual QA ba viewport         |
+| **API Unit & Service Tests**     | `pnpm.cmd test:run` (api)                            | **26/26 PASS** (6 files)        | Có guard PATCH nhân viên rỗng, regression confirm 2.765 dòng, source-shift, RBAC/scope và export     |
+| **PostgreSQL Integration Tests** | migration + seed DB mới; `pnpm.cmd test:integration` | **8/8 PASS** (1 file)           | PostgreSQL 16 thật; source-shift và quản lý/import nhân viên an toàn                                 |
+| **Browser E2E Tests**            | `pnpm.cmd test:e2e`                                  | **12/12 PASS** (Chromium)       | Màn nhân viên 4 trường + thao tác, import/template, responsive và visual QA Import Excel             |
+| **ESLint**                       | `pnpm.cmd lint`                                      | **PASS, 0 warning**             | Flat config kiểm tra TypeScript/React/Node thật; không còn lint no-op                                |
 | **TypeScript Typecheck**         | `pnpm.cmd typecheck`                                 | **PASS** (5 workspace packages) | `@tinh-cong/attendance-engine`, `shared`, `ui`, `api`, `web`                                         |
 | **Production Build**             | `pnpm.cmd build`                                     | **PASS** (toàn monorepo)        | Build Vite web bundle và NestJS API distribution                                                     |
-| **Docker Runtime & Health**      | `docker compose ps` / health endpoints               | **PARTIAL**                     | Container checkpoint trước healthy; build image mới cho hardening bị treo và chưa được xác minh      |
+| **Docker Runtime & Health**      | `docker compose ps` / health endpoints               | **PARTIAL**                     | Container local mới healthy và smoke PASS; image Dockerfile tái lập vẫn bị chặn do commit/build treo |
 | **Synthetic Scale Benchmark**    | `pnpm.cmd test:performance`                          | **PASS** (1.000 NV)             | Query: 16,72 ms, Engine: 5,66 ms, Tổng: 2.386,99 ms                                                  |
 | **Backup & SHA-256**             | `scripts/backup.ps1`                                 | **PASS**                        | Tạo bản sao lưu SQL và mã băm SHA-256 thành công                                                     |
 
-Tổng số test tự động ở lần chạy cuối sau khi nạp đủ biến môi trường: **68 PASS**, 0 FAIL, 0 SKIP. Lần gọi integration thiếu biến môi trường đã dừng trước assertion và được ghi riêng trong `TEST_REPORT.md`.
+Tổng số test tự động ở lần chạy cuối sau khi nạp đủ biến môi trường: **77 PASS**, 0 FAIL, 0 SKIP. Lần integration đầu của mốc hardening đạt 7/8 và phát hiện PATCH nhân viên rỗng trả 200; sau khi thêm guard, chạy lại trên DB mới khác đạt 8/8. Chi tiết ở `TEST_REPORT.md`.
 
 Màn Import Excel đã được xây dựng lại theo mockup: sidebar/topbar dùng chung, stepper động, upload kéo-thả, mapping bảy trường, validation summary, preview/search/filter/export lỗi/phân trang, action bar và view lịch sử. Ảnh bằng chứng trước/sau ở `docs/ui-reference/`. Chưa tuyên bố pixel-perfect vì chưa có automated image-diff threshold và chưa có logo chính thức.
 
@@ -35,24 +36,26 @@ Màn Import Excel đã được xây dựng lại theo mockup: sidebar/topbar d�
 2. **Lỗi dọn dẹp thư mục đầu ra khi build Vite trên Windows (`[vite:prepare-out-dir] EPERM: unlink index-*.css`)**:
    - _Nguyên nhân_: Cơ chế `emptyOutDir: true` mặc định của Vite gọi `rimraf`/`unlinkSync` trên các tệp do tiến trình trước tạo ra.
    - _Khắc phục_: Thêm `build: { sourcemap: true, emptyOutDir: false }` vào `apps/web/vite.config.ts`. Lệnh `pnpm.cmd build` của toàn monorepo vượt qua thành công trong 4.00s.
+3. **Confirm 2.765 dòng trả HTTP 500 (`Prisma P2028`)**:
+   - _Nguyên nhân_: `createMany` vượt timeout 5 giây của interactive transaction; transaction rollback, không có raw row ghi dở.
+   - _Khắc phục_: Chuyển sang batch transaction nguyên tử, thêm regression 2.765 dòng và deploy lại API image local. Full build, 55 unit/service, 5 integration và 9 E2E đều PASS.
 
 ## 4. Trạng thái các Guard nghiệp vụ bắt buộc
 
 - `WORKFLOW_ENABLED=false`: Chặn chuyển trạng thái kỳ công (`REVIEWED`, `APPROVED`, `LOCKED`, `PUBLISHED`). API trả về HTTP 409 Conflict khi cố chuyển trạng thái.
 - `DUPLICATE_KEY_FIELDS=employeeCode,attendanceDate,shiftName`: Khóa nhận diện trùng đã được duyệt ngày 22/10/2026; phát hiện trùng sẽ từ chối toàn bộ import.
 - `RBAC & Data Scope`: Kiểm tra tại tầng NestJS Guards. Tài khoản EMPLOYEE chỉ được đọc dữ liệu của chính mình (IDOR phòng vệ trả HTTP 404).
-- `SOURCE_MASTER_PROVISIONING_ENABLED=false`: chặn API/UI tự tạo master, lịch hoặc suy timestamp từ nguồn trước khi có phê duyệt; ngoại lệ và dashboard đã áp scope backend cho HR/MANAGER.
+- DEC-007 cho phép dùng đúng `Ca1`/`Ca3` trong file làm phân ca và evidence timestamp, không tạo/đọc lịch phân ca. `SOURCE_MASTER_PROVISIONING_ENABLED=false` vẫn chặn API/UI tự tạo hồ sơ nhân viên/phòng ban từ nguồn.
 
 ## 5. Danh sách Blocker cần quyết định / dữ liệu từ bên ngoài
 
-| STT | Mã / Hạng mục          | Trạng thái                             | Yêu cầu / Câu hỏi còn mở                                                                                                                                                                                                                  |
-| --- | ---------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `Q01 / SX.xlsx`        | **PARTIAL/BLOCKED**                    | File đã ACCEPTED 2.765 raw rows; còn thiếu mapping master/lịch/alias/timestamp và expected calculation từ HR. DB development có 1.841 calculation phát sinh từ một lần provision không có decision evidence nên phải coi là `UNVERIFIED`. |
-| 2   | `DEC-002 / Q04`        | **PARTIALLY_CONFIRMED**                | Cần tiêu chí chi tiết để suy ngày ra hôm sau khi dữ liệu nguồn chỉ có giờ. Hiện tại: dòng thiếu căn cứ chuyển sang `NEEDS_REVIEW`.                                                                                                        |
-| 3   | `DEC-003 / Q05`        | **PARTIALLY_CONFIRMED; KEY CONFIRMED** | Đã cấu hình `employeeCode,attendanceDate,shiftName`; còn mở quy trình file sửa/file nhiều kỳ.                                                                                                                                             |
-| 4   | `Q10 / Q11`            | **OPEN**                               | Cần duyệt luồng phê duyệt (ai duyệt, tách vai trò lập/duyệt, điều chỉnh sau khóa). Hiện tại: tắt toàn bộ workflow.                                                                                                                        |
-| 5   | `Q15 / PDF`            | **PARTIAL**                            | Cần mẫu bảng công chính thức, logo, tiêu đề công ty để thay thế watermark development.                                                                                                                                                    |
-| 6   | Docker image hardening | **NOT_VERIFIED**                       | BuildKit treo trong hai lần build; health hiện tại chỉ chứng minh image checkpoint trước.                                                                                                                                                 |
+| STT | Mã / Hạng mục   | Trạng thái                             | Yêu cầu / Câu hỏi còn mở                                                                                                                                     |
+| --- | --------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | `Q01 / SX.xlsx` | **PARTIAL/BLOCKED**                    | File đã ACCEPTED 2.765 raw rows. Không cần lịch phân ca; còn cần quyết định tạo 92 hồ sơ nhân viên/12 phòng ban từ file hay nạp master riêng và expected HR. |
+| 2   | `DEC-002 / Q04` | **PARTIALLY_CONFIRMED**                | Trường hợp `Ca3` hiện tại đã có tiêu chí D+1 theo DEC-007; các dạng checkout khác thiếu căn cứ vẫn `NEEDS_REVIEW`.                                           |
+| 3   | `DEC-003 / Q05` | **PARTIALLY_CONFIRMED; KEY CONFIRMED** | Đã cấu hình `employeeCode,attendanceDate,shiftName`; còn mở quy trình file sửa/file nhiều kỳ.                                                                |
+| 4   | `Q10 / Q11`     | **OPEN**                               | Cần duyệt luồng phê duyệt (ai duyệt, tách vai trò lập/duyệt, điều chỉnh sau khóa). Hiện tại: tắt toàn bộ workflow.                                           |
+| 5   | `Q15 / PDF`     | **PARTIAL**                            | Cần mẫu bảng công chính thức, logo, tiêu đề công ty để thay thế watermark development.                                                                       |
 
 ---
 

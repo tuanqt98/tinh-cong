@@ -1,31 +1,88 @@
 # Báo cáo kiểm thử
 
-Ngày chạy gần nhất: 22/10/2026, timezone `Asia/Ho_Chi_Minh`. Test tự động dùng dữ liệu **synthetic**. File `SX.xlsx` người dùng upload chỉ được dùng để kiểm tra parser/cấu trúc, chưa dùng làm oracle tính công và không thay thế UAT.
+Ngày chạy gần nhất: 23/10/2026, timezone `Asia/Ho_Chi_Minh`. Test tự động dùng dữ liệu **synthetic**. File `SX.xlsx` người dùng upload chỉ được dùng để kiểm tra parser/cấu trúc, chưa dùng làm oracle tính công và không thay thế UAT.
 
 ## Kết quả cuối
 
-| Nhóm                                           | Lệnh/bằng chứng                                  | Kết quả                                                                                                                         |
-| ---------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| Engine unit                                    | `pnpm.cmd test:run`                              | 31/31 PASS, 2 files                                                                                                             |
-| API unit/service/security/export/import policy | `pnpm.cmd --filter @tinh-cong/api test:run`      | 23/23 PASS, 6 files                                                                                                             |
-| PostgreSQL integration                         | `pnpm.cmd test:integration`                      | 5/5 PASS, PostgreSQL 16 thật; lần chạy UI checkpoint dùng DB development đã cấu hình                                            |
-| Browser E2E                                    | `pnpm.cmd test:e2e`                              | 9/9 PASS, Chromium; login, 12 màn hình, mobile, refresh phiên, confirm một lần, xem raw import và 3 viewport visual QA          |
-| Lint command                                   | `pnpm.cmd lint`                                  | Exit 0; hiện không workspace package nào khai báo script lint, vì vậy không coi đây là bằng chứng rule-level lint               |
-| TypeScript                                     | `pnpm.cmd typecheck`                             | PASS, 5 workspace packages có script                                                                                            |
-| Production build                               | `pnpm.cmd build`                                 | PASS, API + web + engine + UI + shared                                                                                          |
-| Prisma                                         | `prisma validate`; `prisma migrate deploy`; seed | PASS, migration `20261021145100_init` và synthetic seed                                                                         |
-| Docker build                                   | `docker compose build api web`                   | **NOT VERIFIED cho thay đổi hiện tại**: hai lần build không phát log và bị dừng sau 244 giây / hơn 7 phút; image cũ vẫn tồn tại |
-| Docker runtime                                 | API direct + Nginx proxy + web                   | PASS trên image checkpoint trước: health `ok`, HTTP 200; không dùng làm bằng chứng cho image mới                                |
-| Backup/restore                                 | `backup.ps1`, `restore.ps1` vào DB tạm           | PASS, SHA-256 tạo được, restore 25 bảng; DB tạm đã xóa                                                                          |
-| Synthetic scale                                | `pnpm.cmd test:performance`                      | PASS, 1.000 NV: query 43,69 ms; engine 6,15 ms; tổng 175,02 ms                                                                  |
+| Nhóm                                           | Lệnh/bằng chứng                                  | Kết quả                                                                                                      |
+| ---------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| Engine unit                                    | `pnpm.cmd test:run`                              | 31/31 PASS, 2 files                                                                                          |
+| API unit/service/security/export/import policy | `pnpm.cmd --filter @tinh-cong/api test:run`      | 26/26 PASS, 6 files; gồm guard PATCH nhân viên rỗng, regression confirm 2.765 dòng và source-shift           |
+| PostgreSQL integration                         | `pnpm.cmd test:integration`                      | 8/8 PASS trên DB mới; thêm CRUD/filter/history/import nhân viên và bảo toàn attendance khi ngừng hoạt động   |
+| Browser E2E                                    | `pnpm.cmd test:e2e`                              | 12/12 PASS, Chromium; bảng nhân viên 4 trường + thao tác, import/template, responsive và visual Import Excel |
+| ESLint                                         | `pnpm.cmd lint`                                  | PASS, 0 warning; ESLint flat config kiểm tra TypeScript/React/Node toàn monorepo                             |
+| TypeScript                                     | `pnpm.cmd typecheck`                             | PASS, 5 workspace packages có script                                                                         |
+| Production build                               | `pnpm.cmd build`                                 | PASS, API + web + engine + UI + shared                                                                       |
+| Prisma                                         | `prisma validate`; `prisma migrate deploy`; seed | PASS, migration `20261021145100_init` và synthetic seed                                                      |
+| Docker build/runtime                           | Buildx + artifact packaging; health endpoints    | Web UI mới runtime PASS; Dockerfile/API rebuild vẫn NOT_COMPLETED do build daemon treo                       |
+| Docker runtime                                 | API direct, Nginx `/healthz`, proxy API và web   | PASS; DB/API/web healthy; API direct/proxy và Nginx HTTP 200; smoke runtime import/template PASS             |
+| Backup/restore                                 | `backup.ps1`, `restore.ps1` vào DB tạm           | PASS, SHA-256 tạo được, restore 25 bảng; DB tạm đã xóa                                                       |
+| Synthetic scale                                | `pnpm.cmd test:performance`                      | PASS, 1.000 NV: query 43,69 ms; engine 6,15 ms; tổng 175,02 ms                                               |
 
-Tổng test tự động ở lần chạy cuối đạt: **68 PASS** (`31 + 23 + 5 + 9`), **0 FAIL**, **0 SKIP** sau lần chạy lại đầy đủ môi trường. Các kiểm tra build/migration/Docker/backup/performance được ghi riêng, không cộng vào số test case.
+Tổng test tự động ở lần chạy cuối đạt: **77 PASS** (`31 + 26 + 8 + 12`), **0 FAIL**, **0 SKIP** sau lần chạy lại đầy đủ môi trường. Các kiểm tra build/migration/Docker/backup/performance được ghi riêng, không cộng vào số test case.
+
+## Mốc chẩn đoán mapping phòng ban import nhân viên ngày 23/10/2026
+
+- Database development chỉ có master phòng ban synthetic `SYN-FACTORY / Phòng sản xuất mẫu`; các giá trị nguồn như `AKO` và `Cơ điện, tạp vụ` chưa có master nên preview bị chặn đúng guard `SOURCE_MASTER_PROVISIONING_ENABLED=false`. Không tự tạo phòng ban từ file.
+- Sửa lỗi hiển thị `Đã đọc 0 dòng` khi các dòng đã đọc nhưng không map được phòng ban: `rowCount` nay đếm mọi dòng dữ liệu không rỗng, độc lập với số dòng hợp lệ để confirm.
+- Lỗi phòng ban nay chứa chính giá trị nguồn và phân biệt trường trống, tên không duy nhất, hoặc master chưa tồn tại/không hoạt động.
+- Regression PostgreSQL tạo file một dòng dùng `AKO`, xác nhận `rowCount=1`, `canConfirm=false` và message cụ thể; migration + seed trên DB mới và 8/8 integration PASS, DB tạm đã xóa. Lint, typecheck, build, 31 engine và 26 API tests đều PASS.
+- Artifact API đã được cập nhật vào container local và restart; smoke preview-only qua Nginx PASS với `rowCount=1` và lỗi `Phòng ban "AKO" chưa tồn tại hoặc không hoạt động trong hệ thống.` API trực tiếp/proxy đều HTTP 200. Smoke không ghi employee/department vào DB.
+
+## Mốc quản lý phòng ban trên UI ngày 23/10/2026
+
+- Bổ sung nút và dialog `Quản lý phòng ban` trên màn Quản lý nhân viên, chỉ hiển thị cho ADMIN. Dialog liệt kê mã, tên, trạng thái và cho tạo master phòng ban bằng thao tác rõ ràng trước khi import.
+- Đây là tạo master thủ công qua API `POST /departments`, không phải tự provision từ file; `SOURCE_MASTER_PROVISIONING_ENABLED=false` được giữ nguyên. HR vẫn quản lý nhân viên/import nhưng không thấy nút quản lý phòng ban; backend tiếp tục chỉ cho ADMIN tạo.
+- E2E mock tạo `AKO`, xác nhận danh mục tăng từ 1 lên 2 rồi tiếp tục luồng template/import và responsive. PostgreSQL integration xác nhận EMPLOYEE nhận 403, ADMIN tạo thành công và cleanup dữ liệu sau test.
+- Gate: ESLint PASS 0 warning; typecheck và production build PASS; engine 31/31; API 26/26; PostgreSQL integration 8/8 trên DB mới; Playwright 12/12. DB integration tạm đã xóa.
+- Web artifact đã cập nhật vào container local và restart. Smoke Chromium có xác thực trên `8180/employees` xác nhận nút/dialog cùng hai input xuất hiện và danh mục development vẫn có đúng 1 phòng ban; smoke không tạo dữ liệu. Ảnh: `docs/ui-evidence/department-management-runtime.png`.
+
+## Mốc cảnh báo nhân viên thiếu khi xử lý import ngày 23/10/2026
+
+- API processing giữ hành vi fail-closed và nay trả thêm `missingEmployeeCodes`: danh sách mã duy nhất, sắp xếp ổn định. `missingEmployees` tiếp tục là số dòng raw chưa liên kết để không phá hợp đồng cũ.
+- Lịch sử import hiển thị cảnh báo nổi bật khi có mã thiếu: số mã, số dòng chưa liên kết, danh sách mã, khẳng định không tự tạo master và nút `Mở Quản lý nhân viên`. Sau khi bổ sung hồ sơ, người dùng được hướng dẫn quay lại bấm `Xử lý dữ liệu` lần nữa; các dòng đủ hồ sơ vẫn được xử lý ở lần đầu.
+- Thông báo sau confirm import mới cũng nêu số mã thiếu và hướng người dùng sang Lịch sử import. Không bật `SOURCE_MASTER_PROVISIONING_ENABLED` và không thay đổi raw/duplicate/calculation rules.
+- Gate: ESLint PASS 0 warning; typecheck/build PASS; engine 31/31; API 26/26; PostgreSQL integration 8/8 trên DB mới; Playwright 12/12. Integration chứng minh một mã thiếu được trả trong `missingEmployeeCodes`; DB tạm đã xóa.
+- API/web container local đã cập nhật và health trực tiếp/proxy/web đều HTTP 200. Smoke runtime dùng route intercept cho request process để xác nhận UI cảnh báo 9 mã mà không xử lý hay ghi dữ liệu development; ảnh `docs/ui-evidence/missing-employees-warning-runtime.png`.
+
+## Mốc ESLint và hardening PATCH nhân viên ngày 22/10/2026
+
+- Thay lệnh lint thành công rỗng bằng ESLint flat config thực cho TypeScript, React hooks và Node; thêm devDependencies ở root và giữ `--max-warnings 0`.
+- Lần lint đầu phát hiện 6 lỗi thật: ba import/biến thừa, hai biểu thức điều kiện chỉ dùng side effect và một effect React cập nhật state đồng bộ. Đã bỏ mã thừa, đổi hai biểu thức thành `if/else` và remount panel nhân viên theo `mode + employeeId`; hành vi nghiệp vụ không đổi.
+- Lần integration đầu trên DB PostgreSQL mới áp đủ hai migration và seed synthetic đạt **7/8**, FAIL vì PATCH chỉ chứa field lạ `phone` trả 200 thay vì 400. Database tạm `tinhcong_it_lint_20261022162900` đã được drop trong `finally`.
+- Nguyên nhân: service chấp nhận update không có trường hồ sơ hỗ trợ, tạo history/audit rỗng khi validation metadata không loại field lạ ở integration runner. Đã thêm guard `BadRequestException` trước truy vấn/transaction và unit regression cho payload chỉ có `reason`.
+- Lần chạy lại trên DB mới khác đạt **8/8 PASS**; DB tạm `tinhcong_it_lint_20261022163133` đã được drop. Gate cuối: lint PASS 0 warning; typecheck PASS; build PASS; engine 31/31; API 26/26; Playwright 12/12.
+- `docker compose config` vẫn xác nhận ba guard bắt buộc. Rebuild Compose, build trực tiếp API qua BuildKit và lần thử legacy builder cho source mới đều không trả log/không hoàn tất trong khoảng theo dõi nên đã dừng, đồng thời kết thúc đúng các PID Docker CLI/buildx do lần chạy tạo. Không ghi Docker build PASS cho mốc này. Image checkpoint Quản lý nhân viên vẫn là API `sha256:5a6fdb096939...`, Web `sha256:c68b0980ab7c...`; container cũ vẫn healthy và health API trực tiếp/proxy/Nginx đều HTTP 200. Source mới chưa có bằng chứng image tương ứng.
+
+## Mốc khôi phục import nhân viên và map bốn trường ngày 23/10/2026
+
+- Theo yêu cầu Chủ dự án, bảng danh sách chỉ còn `Mã nhân viên`, `Tên nhân viên`, `Phòng ban`, `Trạng thái` và `Thao tác`; đã bỏ cột số thứ tự.
+- Form thêm/sửa chỉ map đúng bốn trường trên. Audit history vẫn giữ ở tab riêng vì không phải trường hồ sơ và cần cho truy vết.
+- Đã khôi phục `Import danh sách`, `Tải file mẫu` và dialog preview/confirm. File mẫu mới chỉ có đúng bốn cột trên; parser vẫn chấp nhận header cũ `Họ và tên` để tương thích file đã tải trước đây.
+- Regression E2E xác nhận tải template, preview, confirm import, header bảng đúng năm cột và mobile 390×844 không tràn ngang. Ảnh runtime: `docs/ui-evidence/employee-management-import-restored.png`.
+- Gate thực chạy: ESLint PASS 0 warning; typecheck PASS; production build PASS; engine 31/31; API 26/26; Playwright 12/12; PostgreSQL integration 8/8 trên DB mới sau cả hai migration và seed synthetic. DB tạm đã xóa.
+- Lần integration đầu của mốc đạt 7/8 vì assertion vẫn kỳ vọng tên header cũ; implementation trả đúng `Tên nhân viên`. Đã cập nhật assertion, thêm regression chấp nhận header cũ và chạy lại 8/8 PASS. Một lần chuẩn bị trước đó chưa chạy test vì URI DB tạm bị PowerShell nội suy sai; DB tạm cũng đã được xóa.
+- Docker commit artifact API bị treo và tiến trình commit đã được kết thúc có kiểm tra. Build artifact đã kiểm thử được chép vào writable layer của đúng container API/web hiện tại và hai container được restart; không reset PostgreSQL. Đây là bằng chứng runtime local, chưa phải image build tái lập.
+- Smoke Chromium có đăng nhập trên đúng URL `http://127.0.0.1:8180/employees` PASS: năm cột đúng, hai nút hiện diện, dialog mở được, file tải về có đúng bốn header. API trực tiếp, API proxy và Nginx đều HTTP 200; DB/API/web cuối cùng đều healthy.
+
+## Mốc Quản lý nhân viên ngày 22/10/2026
+
+- Màn `Quản lý nhân viên` hiện có header/action, bốn KPI, tìm kiếm và bộ lọc server-side, sorting, pagination 10/20/50, bảng năm cột (bốn trường + thao tác), status badge, panel responsive hai tab và trạng thái loading/empty/error.
+- API/database thực được mở rộng bằng migration additive `20261022193000_employee_management`: trạng thái `ACTIVE/ON_LEAVE/RESIGNED`, hồ sơ liên hệ/công việc/ca hiện tại, ngày vào/nghỉ và bảng `employee_history`. Migration không sửa/xóa attendance, import hoặc kết quả công cũ.
+- Create/update/deactivate có validation, RBAC, backend data scope, audit log và history thật. Mã nhân viên không có endpoint chỉnh sửa. DELETE UI/API chỉ chuyển `RESIGNED`, trả số attendance giữ nguyên và không hard-delete/cascade.
+- Backend import master nhân viên vẫn là luồng riêng preview/confirm và được mở từ màn Quản lý nhân viên; template/preview/confirm chỉ map bốn trường hồ sơ. Policy duplicate của attendance không thay đổi.
+- Visual evidence: `docs/ui-reference/employee-management-before.png`, mockup `docs/ui-reference/employee-management-target.png` và `docs/ui-evidence/employee-management-after.png` tại 1536×1024. Ảnh after dùng mock API synthetic để visual QA, không phải dữ liệu thật.
+- Lần E2E đầu đạt 8/12: ba locator test mơ hồ và smoke fixture thiếu contract KPI/phòng ban. Lần hai đạt 10/12 và phát hiện pagination thật tự quay về trang 1 khi query mới loading; đã bỏ reset phụ thuộc dữ liệu loading. Lần cuối 12/12 PASS.
+- Lần integration đầu trên PostgreSQL mới đạt 6/8: `pageSize` từ query còn là chuỗi khi xuống Prisma và binary response test chưa có parser. Service nay ép `page/pageSize` về số, test dùng binary parser; tạo lại DB mới hoàn toàn, áp cả hai migration, seed synthetic và chạy lại 8/8 PASS. DB tạm được drop trong `finally`.
+- Lần typecheck sau khi bổ sung semantics xóa trường tùy chọn bằng `null` FAIL vì helper reference-data chưa nhận kiểu nullable. Đã sửa chữ ký helper, bổ sung integration xóa phân ca có ngày hiệu lực và chạy lại typecheck/build PASS, integration 8/8 trên một DB mới khác; không bỏ validation để đạt PASS.
+- Gate cuối: `pnpm.cmd lint` exit 0 nhưng không workspace nào khai báo lint script; `pnpm.cmd typecheck` PASS; `pnpm.cmd build` PASS; engine 31/31; API unit/service 25/25; integration 8/8; Playwright 12/12.
+- Chưa tuyên bố pixel-perfect/100%: chưa chạy automated pixel-diff threshold, logo/avatar chính thức chưa có và typography/wordmark tạm vẫn khác mockup. UAT/dữ liệu thật vẫn BLOCKED.
 
 ## Mốc redesign Import Excel ngày 22/10/2026
 
 - Xây dựng lại màn Import Excel theo ảnh mục tiêu 1536×1024: app shell/sidebar/topbar dùng chung, stepper động, upload kéo-thả thật, mapping bảy trường, trạng thái kiểm tra cấu trúc, KPI/toolbar/bảng preview/phân trang và action bar.
 - Giữ nguyên API/backend/database/engine và khóa trùng. Luồng preview/confirm vẫn chờ phản hồi backend; mapping thay đổi sẽ hủy preview cũ; confirm lặp vẫn bị khóa.
-- Chuyển lịch sử import sang view riêng trong cùng màn hình; các thao tác xem raw, xử lý dữ liệu và guard `Chờ duyệt master/lịch` được giữ nguyên.
+- Chuyển lịch sử import sang view riêng trong cùng màn hình; các thao tác xem raw, xử lý dữ liệu và guard tạo hồ sơ nguồn được giữ nguyên. Sau DEC-007, nhãn guard là `Chờ duyệt hồ sơ NV` vì lịch phân ca không còn bắt buộc.
 - Visual fixture chỉ là **synthetic mock API data**, không phải dữ liệu thật và không hard-code vào production UI.
 - Đã chụp và kiểm tra trực quan tại `1536×1024`, `1440×900`, `1280×800`. Ảnh trước, ảnh mục tiêu và ba ảnh sau nằm trong `docs/ui-reference/`.
 - Kết quả gate tại checkpoint: `pnpm.cmd typecheck` PASS; `pnpm.cmd build` PASS; `pnpm.cmd test:run` 54/54 PASS; `pnpm.cmd test:e2e` 9/9 PASS; integration 5/5 PASS sau khi nạp biến môi trường development.
@@ -34,22 +91,25 @@ Tổng test tự động ở lần chạy cuối đạt: **68 PASS** (`31 + 23 +
 
 ## Mốc hardening fail-closed ngày 22/10/2026
 
-- Phát hiện API/UI có thao tác tự tạo master nhân viên/phòng ban, lịch phân ca, alias ca và suy Ca 3 D+1 từ file nguồn dù Q01/Q04/Q07 chưa có phê duyệt được ghi nhận. Đã thêm `SOURCE_MASTER_PROVISIONING_ENABLED=false`, backend trả `409 SOURCE_MASTER_APPROVAL_REQUIRED` trước khi đọc/ghi DB và UI chỉ hiển thị nút vô hiệu hóa `Chờ duyệt master/lịch`.
+- Phát hiện API/UI có thao tác tự tạo master nhân viên/phòng ban, lịch phân ca, alias ca và suy Ca 3 D+1 từ file nguồn dù Q01/Q04/Q07 chưa có phê duyệt được ghi nhận. Đã thêm `SOURCE_MASTER_PROVISIONING_ENABLED=false`, backend trả `409 SOURCE_MASTER_APPROVAL_REQUIRED` trước khi đọc/ghi DB. DEC-007 sau đó chỉ gỡ dependency lịch phân ca; guard tạo master vẫn giữ và UI hiển thị `Chờ duyệt hồ sơ NV`.
 - API ngoại lệ nay áp data scope tại backend. ADMIN được xem toàn bộ; HR không có `ManagerScope` trả tập rỗng và không thể resolve ngoại lệ ngoài scope. Tài khoản HR/MANAGER không còn tự nhận scope cá nhân chỉ vì có `employeeId`.
 - Dashboard đã scope số kỳ chờ và publication theo tập nhân viên được phép thay vì đếm toàn hệ thống cho HR/MANAGER.
 - `pnpm.cmd typecheck`, `pnpm.cmd build`, `pnpm.cmd test:run`, format check các tệp đã chạm và `pnpm.cmd test:e2e` đều PASS. Migration `20261021145100_init`, seed synthetic và 5 integration tests chạy trên database mới `tinhcong_it_*` PASS; database tạm được xóa trong `finally`.
 - Lần integration đầu trên DB development có **1 FAIL / 4 PASS** vì test cũ giả định dashboard luôn trống. DB thực tế đã có dữ liệu; test đã được sửa để kiểm tra contract mà không phụ thuộc trạng thái tồn lưu, rồi chạy lại trên DB mới đạt 5/5. Lần FAIL này không được ghi thành PASS.
-- `docker compose config` xác nhận `WORKFLOW_ENABLED=false`, `SOURCE_MASTER_PROVISIONING_ENABLED=false` và khóa trùng vẫn đúng. Health của container cũ đạt qua API trực tiếp, Nginx và proxy. Build image mới chưa có bằng chứng hoàn tất do BuildKit treo; không tuyên bố Docker PASS cho code mới.
+- `docker compose config` xác nhận `WORKFLOW_ENABLED=false`, `SOURCE_MASTER_PROVISIONING_ENABLED=false` và khóa trùng vẫn đúng. Image web/API hiện tại đã build và recreate; DB/API/web healthy, API trực tiếp/proxy trả `ok` và Nginx trả HTTP 200.
 
-## Sai lệch dữ liệu development cần quyết định
+## Reset dữ liệu development ngày 22/10/2026
 
-Kiểm tra read-only sau khi integration phát hiện DB development hiện có **93 nhân viên, 1.908 lịch, 1.841 normalization và 1.841 calculation `VALID`**, cùng một audit `IMPORT_SOURCE_APPROVED_AND_MASTER_PROVISIONED` lúc `2026-10-22T04:00:36.573Z` (11:00:36 `Asia/Ho_Chi_Minh`). Hồ sơ quyết định hiện hành vẫn ghi thiếu phê duyệt master/lịch/alias/tiêu chí D+1. Vì vậy:
+Kiểm tra read-only trước reset phát hiện DB development có **93 nhân viên, 1.908 lịch, 1.841 normalization và 1.841 calculation `VALID`**, cùng một audit provision không khớp decision log. Chủ dự án đã yêu cầu reset toàn bộ database development `tinhcong_dev` và xác nhận không cần backup.
 
-- Không dùng 1.841 calculation này làm oracle/UAT hoặc bằng chứng dữ liệu thật.
-- Không tự xóa/rollback vì đó là thay đổi dữ liệu phá hủy và cần chủ dự án xác nhận phạm vi phục hồi.
-- Giữ workflow/publish tắt; cần quyết định tái tạo DB development từ backup/checkpoint sạch hoặc đánh dấu và xử lý lại dữ liệu đã provision.
+- `prisma migrate reset --force --skip-seed` áp lại migration `20261021145100_init` thành công; synthetic seed chạy thành công.
+- Sau reset: 0 import, 0 raw, 0 import issue, 0 normalization, 0 calculation, 0 exception, 0 work schedule; còn 1 phòng ban, 1 nhân viên, 3 user và 1 audit synthetic.
+- PostgreSQL/API/web đều healthy; proxy `/api/v1/health` trả `ok`; đăng nhập `admin.synthetic` thành công; web vẫn phục vụ bundle redesign `index-D0RB9qw7.js`.
+- Không có backup theo chỉ thị rõ ràng của Chủ dự án. Dữ liệu đã xóa không thể khôi phục từ checkpoint này.
 
-## Kiểm tra file SX.xlsx ngày 22/10/2026
+## Kiểm tra file SX.xlsx ngày 22/10/2026 — evidence trước reset
+
+Các số liệu dưới đây mô tả lần import trước reset để phục vụ audit. Chúng không còn là dữ liệu hiện tồn trong DB development.
 
 - SHA-256 đã được lưu trong bản ghi import; file nằm trong private upload volume, không đưa vào Git/tài liệu.
 - Sheet `Xuất lưới`, 2.769 dòng vật lý, header thực ở dòng 3 với 21 cột.
@@ -60,6 +120,24 @@ Kiểm tra read-only sau khi integration phát hiện DB development hiện có 
 - Người dùng đã confirm: import `ACCEPTED`, 2.765 raw rows. Backfill pipeline idempotent tạo 4.505 ngoại lệ = 1.740 cảnh báo nguồn + 2.765 `EMPLOYEE_NOT_FOUND`.
 - Dữ liệu nguồn có 92 mã nhân viên/12 phòng ban; master development chỉ có 1 nhân viên synthetic và 0 lịch phân ca. Kết quả an toàn: 0 linked, 0 normalization, 0 calculation; không tự tạo master hoặc suy lịch/timestamp.
 - Web/API mới hiển thị lịch sử import, raw rows, số ngoại lệ/trạng thái xử lý; các lần confirm sau tự chạy pipeline và giữ raw nếu bước xử lý phụ thất bại.
+
+## Sửa lỗi confirm import lớn sau reset
+
+- Lần confirm lại `SX.xlsx` sau reset trả HTTP 500. Log API xác định Prisma `P2028`: interactive transaction hết hạn 5 giây khi `attendanceRaw.createMany` ghi 2.765 dòng; thời gian thực tế 5.894 giây.
+- Transaction đã rollback đúng: import vẫn `PREVIEW`, raw rows bằng 0 và không có ghi một phần.
+- Đã thay callback interactive transaction bằng sequential batch transaction của Prisma cho cả nhánh ACCEPTED và REJECTED. Tính nguyên tử/all-or-nothing và duplicate policy không đổi.
+- Thêm regression synthetic 2.765 dòng; API tests tăng lên 24/24 PASS. Full gate sau sửa: typecheck PASS, build PASS, unit/service 55/55 PASS, integration 5/5 PASS, E2E 9/9 PASS.
+- API image mới đã build trực tiếp từ `infra/docker/api.Dockerfile`, artifact được kiểm tra có bản sửa, container được recreate và healthy. Preview lỗi trước đó vẫn sẵn sàng để người dùng bấm `Xác nhận import` lại; hệ thống không tự confirm thay người dùng.
+
+## Mốc dùng Tên ca nguồn thay lịch phân ca — DEC-007
+
+- Chủ dự án xác nhận không quản lý lịch phân ca riêng; pipeline nay dùng đúng `Ca1`/`Ca3` trong cột `Tên ca` làm phân ca của dòng, `Ngày chấm công` làm ngày bắt đầu ca và không truy vấn/tạo `work_schedules`.
+- Dữ liệu hiện tại: 1.252 dòng `Ca1`, 664 dòng `Ca3`, 63 dòng `--`, 786 dòng ca trống. Ca trống/`--`/alias khác vẫn chuyển `UNSUPPORTED_SHIFT_FOR_CALCULATION`, không tự đoán.
+- Regression synthetic chứng minh dòng Ca1 đủ hồ sơ được normalization/calculation trực tiếp với evidence `SOURCE_SHIFT_ASSIGNMENT`, không có Prisma mock `workSchedule`; API suite tăng từ 24 lên 25 test.
+- Gate cuối: typecheck PASS; build PASS; engine 31/31; API 25/25; integration 6/6 trên DB mới sau migration/seed; E2E 9/9. Tổng 71 PASS, 0 FAIL, 0 SKIP.
+- Lần typecheck đầu của mốc FAIL vì regression test gọi method private và fixture thiếu trường type bắt buộc. Đã sửa bằng test adapter typed/cast fixture, chạy lại typecheck PASS; không sửa code nghiệp vụ để né lỗi.
+- `docker compose build api web` không phát log và không hoàn tất trong khoảng theo dõi nên đã dừng. Build trực tiếp hai Dockerfile PASS; artifact API/web được grep kiểm tra, container recreate thành công; API trực tiếp, proxy và Nginx health đều HTTP 200.
+- DB development sau deploy vẫn có 2.765 raw, 1 employee synthetic, 0 work schedule, 0 normalization và 0 calculation. Nguyên nhân còn lại là 92 mã nguồn chưa có employee master; `SOURCE_MASTER_PROVISIONING_ENABLED=false` vẫn đúng vì người dùng chưa quyết định tạo master từ file hay nạp master riêng.
 
 ## Phạm vi đã chứng minh
 
@@ -91,20 +169,30 @@ Kiểm tra read-only sau khi integration phát hiện DB development hiện có 
 13. Luồng `approve-source-and-process` có thể tự ghi nhận phê duyệt chưa tồn tại và tạo master/lịch/calculation: khóa mặc định bằng feature flag backend, vô hiệu hóa thao tác UI và thêm unit/integration/E2E regression.
 14. `GET /exceptions` và resolve ngoại lệ chưa lọc scope HR; `employeeScope` còn cộng scope cá nhân cho HR/MANAGER không có cấu hình: áp scope ở query/mutation và thêm unit test fail-closed.
 15. Integration dashboard phụ thuộc DB phải trống nên FAIL khi development DB có dữ liệu: đổi assertion sang contract/type và chứng minh lại trên DB PostgreSQL mới 5/5 PASS.
+16. Lệnh lint root từng chỉ chạy `--if-present` và không package nào có script lint nên exit 0 mà không kiểm tra rule: thêm ESLint flat config, sửa 6 lỗi ban đầu và chạy lại 0 warning.
+17. Integration trên DB mới phát hiện PATCH nhân viên chỉ có field không hỗ trợ vẫn trả 200 và tạo audit rỗng: thêm service guard + unit regression; lần đầu 7/8, lần sau 8/8 PASS trên DB mới khác.
 
 Không test nào bị xóa hoặc validation/phân quyền bị tắt để đạt PASS.
 
 ## Chưa chạy / bị chặn
 
-| Hạng mục                                                       | Trạng thái               | Lý do                                                                                                                                  |
-| -------------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Đối chiếu `SX.xlsx` thật                                       | PARTIAL/BLOCKED          | đã đọc cấu trúc file; thiếu mapping/lịch được duyệt và expected HR để đối chiếu kết quả                                                |
-| UAT với HR/nhân viên                                           | BLOCKED                  | chưa có người nghiệm thu và dữ liệu đã ẩn danh                                                                                         |
-| Duplicate key nghiệp vụ thật                                   | PASS_POLICY/PARTIAL_DATA | Khóa đã duyệt và cấu hình; 0 nhóm trùng trên `SX.xlsx`; chưa thực hiện confirm/UAT thay người dùng                                     |
-| Workflow chốt/phát hành end-to-end thật                        | BLOCKED                  | Q10/Q11 và hậu kiểm sau khóa chưa được duyệt; flag mặc định tắt                                                                        |
-| PDF hàng loạt và mẫu chính thức                                | PARTIAL/BLOCKED          | PDF cá nhân synthetic đã test; thiếu mẫu/logo và approval phát hành                                                                    |
-| Pen-test độc lập, tải đồng thời/SLA dài hạn                    | NOT_RUN                  | cần môi trường staging và tiêu chí SLA được duyệt                                                                                      |
-| Xử lý 1.841 calculation development không có decision evidence | BLOCKED/UNVERIFIED       | cần chủ dự án chọn rollback DB development hoặc quy trình đánh dấu/revalidate; không tự xóa dữ liệu                                    |
-| Docker image cho mốc hardening hiện tại                        | NOT_VERIFIED             | BuildKit không phát log/không hoàn tất trong hai lần thử; container image checkpoint trước vẫn healthy nhưng không chứng minh code mới |
+| Hạng mục                                    | Trạng thái               | Lý do                                                                                              |
+| ------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------- |
+| Đối chiếu `SX.xlsx` thật                    | PARTIAL/BLOCKED          | phân ca nguồn đã duyệt; còn thiếu master nhân viên và expected HR để đối chiếu kết quả             |
+| UAT với HR/nhân viên                        | BLOCKED                  | chưa có người nghiệm thu và dữ liệu đã ẩn danh                                                     |
+| Duplicate key nghiệp vụ thật                | PASS_POLICY/PARTIAL_DATA | Khóa đã duyệt và cấu hình; 0 nhóm trùng trên `SX.xlsx`; chưa thực hiện confirm/UAT thay người dùng |
+| Workflow chốt/phát hành end-to-end thật     | BLOCKED                  | Q10/Q11 và hậu kiểm sau khóa chưa được duyệt; flag mặc định tắt                                    |
+| PDF hàng loạt và mẫu chính thức             | PARTIAL/BLOCKED          | PDF cá nhân synthetic đã test; thiếu mẫu/logo và approval phát hành                                |
+| Pen-test độc lập, tải đồng thời/SLA dài hạn | NOT_RUN                  | cần môi trường staging và tiêu chí SLA được duyệt                                                  |
 
 Do các mục trên, báo cáo này không tuyên bố 100% acceptance hoặc production-ready.
+
+## Rebuild Docker local sau redesign Quản lý nhân viên — 22/10/2026
+
+- `docker compose build api web` PASS. Image local mới: API `sha256:5a6fdb096939...`, Web `sha256:c68b0980ab7c...`.
+- Hai container API/Web được recreate từ image mới; PostgreSQL được giữ nguyên, không reset hoặc xóa dữ liệu. `docker compose ps` xác nhận DB/API/Web đều `healthy`.
+- `pnpm db:migrate` trong container API PASS: Prisma nhận 2 migration và không còn migration chờ áp dụng.
+- Health runtime PASS: API trực tiếp `http://127.0.0.1:3300/api/v1/health` HTTP 200; API qua Nginx `http://127.0.0.1:8180/api/v1/health` HTTP 200; Nginx `/healthz` HTTP 200.
+- Guard runtime được kiểm tra lại và giữ nguyên: `WORKFLOW_ENABLED=false`, `SOURCE_MASTER_PROVISIONING_ENABLED=false`, `DUPLICATE_KEY_FIELDS=employeeCode,attendanceDate,shiftName`.
+- Smoke API có xác thực PASS: login synthetic, `GET /employees` và `GET /employees/statistics` đều thành công; database hiện có đúng 1 hồ sơ synthetic `SYN-001`, trạng thái đang làm việc.
+- Smoke Chromium trên đúng Docker URL `http://127.0.0.1:8180/employees` của checkpoint image cũ PASS: heading/subtitle, KPI, bộ lọc và dòng `SYN-001` hiển thị. Ảnh `docs/ui-evidence/employee-management-docker-local.png` là bằng chứng lịch sử; bằng chứng mới nhất là `employee-management-import-restored.png`.
