@@ -65,6 +65,7 @@ const SHIFT_DEFINITIONS: Record<
       tier150After: 28_800,
       targetWorkedSeconds: 39_600,
       countEarlyArrivalSeconds: false,
+      checkOutBlockSeconds: 1_800,
       postCompletionBlockSeconds: 1_800,
       sundayTierPercentage: 200,
     },
@@ -991,6 +992,8 @@ export class ImportsService {
           : scheduledNetSeconds,
       countEarlyArrivalSeconds:
         typeof tiers.countEarlyArrivalSeconds === 'boolean' ? tiers.countEarlyArrivalSeconds : true,
+      checkOutBlockSeconds:
+        typeof tiers.checkOutBlockSeconds === 'number' ? tiers.checkOutBlockSeconds : null,
       postCompletionBlockSeconds:
         typeof tiers.postCompletionBlockSeconds === 'number'
           ? tiers.postCompletionBlockSeconds

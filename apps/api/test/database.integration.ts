@@ -90,7 +90,7 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
       prisma.shiftRule.count({
         where: {
           shift: { code: 'CA1' },
-          version: 3,
+          version: 4,
           effectiveFrom: new Date('2026-09-01T00:00:00.000Z'),
           scheduledStartSeconds: 25_200,
           scheduledCompletionSeconds: 68_400,
@@ -422,7 +422,7 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
 
   it('prepares period coverage and calculates with the approved Ca 1 rule without a work schedule', async () => {
     const ca1Rule = await prisma.shiftRule.findFirstOrThrow({
-      where: { shift: { code: 'CA1' }, version: 3 },
+      where: { shift: { code: 'CA1' }, version: 4 },
     });
     const existingSourcePeriod = await prisma.attendancePeriod.findUnique({
       where: { year_month: { year: 2026, month: 9 } },
@@ -535,7 +535,7 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
 
   it('does not backdate the approved Ca 1 rule before 01/09/2026', async () => {
     const ca1Rule = await prisma.shiftRule.findFirstOrThrow({
-      where: { shift: { code: 'CA1' }, version: 3 },
+      where: { shift: { code: 'CA1' }, version: 4 },
     });
     const importRecord = await prisma.attendanceImport.create({
       data: {
@@ -588,7 +588,7 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
     }
   });
 
-  it('applies Ca 1 07:00 credit boundaries and full 30-minute blocks after 19:00', async () => {
+  it('applies Ca 1 07:00 credit boundaries and full 30-minute checkout blocks', async () => {
     const existingSourcePeriod = await prisma.attendancePeriod.findUnique({
       where: { year_month: { year: 2026, month: 9 } },
     });
@@ -596,7 +596,7 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
       data: {
         originalName: 'synthetic-ca1-boundary.xlsx',
         sha256: 'd'.repeat(64),
-        mappingVersion: 'integration-ca1-v2',
+        mappingVersion: 'integration-ca1-v4',
         status: 'ACCEPTED',
         attemptedById: adminUserId,
         confirmedAt: new Date(),
@@ -615,6 +615,22 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
           attendanceDateRaw: '2026-09-18',
           checkInRaw: '06:30',
           checkOutRaw: '19:20',
+          shiftNameRaw: 'Ca1',
+          rawCells: {},
+        },
+      }),
+      prisma.attendanceRaw.create({
+        data: {
+          importId: importRecord.id,
+          employeeId: ownEmployeeId,
+          sheet: 'Synthetic CA1',
+          rowNo: 6,
+          employeeCode: 'SYN-001',
+          employeeName: 'Nhân viên synthetic 001',
+          departmentName: 'Phòng sản xuất mẫu',
+          attendanceDateRaw: '2026-09-25',
+          checkInRaw: '06:37',
+          checkOutRaw: '18:11',
           shiftNameRaw: 'Ca1',
           rawCells: {},
         },
@@ -661,7 +677,7 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
         tier210Seconds: 0,
         tier230Seconds: 0,
         shiftRule: {
-          version: 3,
+          version: 4,
           scheduledStartSeconds: 25_200,
           scheduledCompletionSeconds: 68_400,
         },
@@ -670,7 +686,7 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
       expect(at1920.normalization.checkOutAt?.toISOString()).toBe('2026-09-18T12:20:00.000Z');
 
       const at1930 = await prisma.attendanceCalculation.findFirstOrThrow({
-        where: { rawId: rawRows[1]!.id },
+        where: { rawId: rawRows[2]!.id },
         include: { normalization: true, shiftRule: true },
       });
       expect(at1930).toMatchObject({
@@ -681,10 +697,28 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
         tier150Seconds: 12_600,
         tier200Seconds: 0,
         tier230Seconds: 0,
-        shiftRule: { version: 3 },
+        shiftRule: { version: 4 },
       });
       expect(at1930.normalization.checkInAt?.toISOString()).toBe('2026-09-18T23:30:00.000Z');
       expect(at1930.normalization.checkOutAt?.toISOString()).toBe('2026-09-19T12:30:00.000Z');
+
+      const at1811 = await prisma.attendanceCalculation.findFirstOrThrow({
+        where: { rawId: rawRows[1]!.id },
+        include: { normalization: true, shiftRule: true },
+      });
+      expect(at1811).toMatchObject({
+        presenceSeconds: 39_600,
+        breakSeconds: 3_600,
+        workedSeconds: 36_000,
+        earlySeconds: 2_940,
+        tier100Seconds: 28_800,
+        tier150Seconds: 7_200,
+        tier200Seconds: 0,
+        tier230Seconds: 0,
+        shiftRule: { version: 4 },
+      });
+      expect(at1811.normalization.checkInAt?.toISOString()).toBe('2026-09-24T23:37:00.000Z');
+      expect(at1811.normalization.checkOutAt?.toISOString()).toBe('2026-09-25T11:11:00.000Z');
     } finally {
       const rawIds = rawRows.map((row) => row.id);
       await prisma.attendanceException.deleteMany({ where: { rawId: { in: rawIds } } });
@@ -770,7 +804,7 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
         tier200Seconds: 41_400,
         tier210Seconds: 0,
         tier230Seconds: 0,
-        shiftRule: { version: 3 },
+        shiftRule: { version: 4 },
       });
       expect(calculations[1]).toMatchObject({
         workedSeconds: 41_400,

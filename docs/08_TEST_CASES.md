@@ -1,6 +1,6 @@
 # 08 – Ma trận kiểm thử và đối chiếu
 
-Cập nhật ngày 24/10/2026. Đã rà soát T01–T25, bổ sung T26–T35 cho DEC-001–DEC-006, T36 cho DEC-008, T37 cho DEC-009 và T38–T39 cho DEC-010. Các trạng thái `PASS_SYNTHETIC` bên dưới là kết quả test tự động đã chạy bằng fixture synthetic; chúng không thay thế đối chiếu `SX.xlsx` hay UAT. Xem lệnh và bằng chứng tại `TEST_REPORT.md`.
+Cập nhật ngày 24/10/2026. Đã rà soát T01–T25, bổ sung T26–T35 cho DEC-001–DEC-006, T36 cho DEC-008, T37 cho DEC-009, T38–T39 cho DEC-010 và T40 cho DEC-011. Các trạng thái `PASS_SYNTHETIC` bên dưới là kết quả test tự động đã chạy bằng fixture synthetic; chúng không thay thế đối chiếu `SX.xlsx` hay UAT. Xem lệnh và bằng chứng tại `TEST_REPORT.md`.
 
 Kỳ vọng số tính bằng phút để dễ đọc; triển khai/test nội bộ phải dùng số nguyên giây. `D` là ngày bắt đầu ca. Cột `T` là `(100%,130%,150%,200%,210%,230%)`. Các con số “theo công thức” là oracle tài liệu cần HR xác nhận/đối chiếu, không phải actual result.
 
@@ -52,6 +52,7 @@ Kỳ vọng số tính bằng phút để dễ đọc; triển khai/test nội b
 | T37 | Ca1 vào 06:30, ra 19:20 và 19:30                                     | giữ raw 06:30/19:20 hoặc 19:30; lượt 19:20 tính như 07:00–19:00, lượt 19:30 tính thêm đúng 30 phút; tổng tier bằng W           | DEC-009         | PASS_UNIT_AND_DB_INTEGRATION |
 | T38 | Ca1 có `D` là Chủ nhật, vào 06:30 và ra 19:30                        | W690; T(0,0,0,690,0,0); vẫn giới hạn vào sớm và chỉ nhận khối đủ 30 phút sau 19:00                                             | DEC-010         | PASS_UNIT_AND_DB_INTEGRATION |
 | T39 | Ca3 có `D` là Chủ nhật, ra vào thứ Hai 07:30                         | W690; T(0,0,0,0,0,690); mức dựa trên `D`, vẫn giới hạn vào sớm và khối đủ 30 phút sau 07:00                                    | DEC-010         | PASS_UNIT_AND_DB_INTEGRATION |
+| T40 | Ca1 vào 06:37, ra 18:11                                              | giữ raw 06:37/18:11; tính `Ac=07:00`, `Bc=18:00`, nghỉ 60 phút, W600; T(480,0,120,0,0,0); về sớm dùng raw nên E49              | DEC-011         | PASS_UNIT_AND_DB_INTEGRATION |
 
 ## Ca biên vẫn phải bao phủ
 

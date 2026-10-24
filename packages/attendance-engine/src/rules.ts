@@ -13,6 +13,7 @@ export interface ShiftTimeline {
   breakEnd: number;
   targetWorkedSeconds: number;
   countEarlyArrivalSeconds: boolean;
+  checkOutBlockSeconds: number | null;
   postCompletionBlockSeconds: number | null;
   sundayTierPercentage: 200 | 230 | null;
 }
@@ -30,6 +31,7 @@ function defaultShiftRule(shiftCode: ShiftCode): EngineShiftRule {
       breakEndSeconds: 13 * 60 * 60,
       targetWorkedSeconds: 11 * 60 * 60,
       countEarlyArrivalSeconds: false,
+      checkOutBlockSeconds: 30 * 60,
       postCompletionBlockSeconds: 30 * 60,
       sundayTierPercentage: 200,
     };
@@ -42,6 +44,7 @@ function defaultShiftRule(shiftCode: ShiftCode): EngineShiftRule {
     breakEndSeconds: 25 * 60 * 60,
     targetWorkedSeconds: 11 * 60 * 60,
     countEarlyArrivalSeconds: false,
+    checkOutBlockSeconds: null,
     postCompletionBlockSeconds: 30 * 60,
     sundayTierPercentage: 230,
   };
@@ -61,6 +64,7 @@ export function buildShiftTimeline(
     breakEnd: midnight + rule.breakEndSeconds,
     targetWorkedSeconds: rule.targetWorkedSeconds,
     countEarlyArrivalSeconds: rule.countEarlyArrivalSeconds,
+    checkOutBlockSeconds: rule.checkOutBlockSeconds,
     postCompletionBlockSeconds: rule.postCompletionBlockSeconds,
     sundayTierPercentage: rule.sundayTierPercentage,
   };

@@ -1,10 +1,10 @@
 # 02 – Quy tắc tính công và kiểm soát ngoại lệ
 
-Cập nhật ngày 24/10/2026 theo DEC-001–DEC-010. DEC-008 thay khung Ca 3 thành 19:00–07:00; DEC-009 thay khung Ca 1 thành 07:00–19:00; DEC-010 bổ sung mức Chủ nhật 200%/230%. Cả hai ca chỉ ghi nhận phần sau mốc kết thúc theo từng khối đủ 30 phút.
+Cập nhật ngày 24/10/2026 theo DEC-001–DEC-011. DEC-008 thay khung Ca 3 thành 19:00–07:00; DEC-009 thay khung Ca 1 thành 07:00–19:00; DEC-010 bổ sung mức Chủ nhật 200%/230%; DEC-011 áp block giờ ra 30 phút cho toàn bộ Ca 1. Ca 3 tiếp tục chỉ áp block cho phần sau 07:00.
 
 ## Biểu diễn thời gian
 
-Múi giờ nghiệp vụ là `Asia/Ho_Chi_Minh`. Nội bộ dùng số nguyên giây; một giờ bằng 3.600 giây. Timestamp nguồn không bị làm tròn hoặc sửa. Khoảng được tính công có thể bị giới hạn theo mốc ca và khối ngoài giờ đã được DEC-008 xác nhận.
+Múi giờ nghiệp vụ là `Asia/Ho_Chi_Minh`. Nội bộ dùng số nguyên giây; một giờ bằng 3.600 giây. Timestamp nguồn không bị làm tròn hoặc sửa. Khoảng được tính công có thể bị giới hạn theo mốc ca và block đã được DEC-008/DEC-011 xác nhận.
 
 - `D`: ngày chấm công/ngày bắt đầu ca theo lịch phân công.
 - `A`: timestamp vào thực tế, có ngày và múi giờ.
@@ -17,7 +17,7 @@ Múi giờ nghiệp vụ là `Asia/Ho_Chi_Minh`. Nội bộ dùng số nguyên g
 
 Ngày lịch chứa timestamp, ngày ca `D` và ngày hiển thị trên ô nguồn là ba khái niệm phải được lưu/đối chiếu riêng. Chỉ tính khi `D`, `A`, `B` đã được xác định bằng bằng chứng đủ tin cậy và không có lỗi chặn.
 
-Rule Ca 1/Ca 3 hiện hành theo DEC-008/DEC-009/DEC-010 có hiệu lực từ ngày công 01/09/2026. Không tự kéo lùi hiệu lực cho dữ liệu cũ hơn; thiếu quyết định áp dụng lịch sử thì fail-closed.
+Rule Ca 1/Ca 3 hiện hành theo DEC-008–DEC-011 có hiệu lực từ ngày công 01/09/2026. Không tự kéo lùi hiệu lực cho dữ liệu cũ hơn; thiếu quyết định áp dụng lịch sử thì fail-closed.
 
 ## Chuẩn hóa ngày ca và timestamp
 
@@ -34,8 +34,7 @@ Không được giả định một ca kéo dài nhiều ngày khi nguồn thi�
 `S = D 07:00`; nghỉ `D 12:00–13:00`; mốc kết thúc chuẩn `C = D 19:00`.
 
 - `Ac = max(A,S)`: timestamp vào thực tế vẫn được lưu nguyên, nhưng phần trước 07:00 không được tính công.
-- Nếu `B <= C` thì `Bc=B`.
-- Nếu `B > C` thì `Bc = C + floor((B-C)/1.800) × 1.800`: chỉ từng khối đủ 30 phút sau 19:00 được tính. Ví dụ 19:20 → `Bc=19:00`, 19:30 → `Bc=19:30`, 19:59 → `Bc=19:30`.
+- Với `B >= S`, `Bc = S + floor((B-S)/1.800) × 1.800`: giờ ra dùng để tính công luôn được hạ xuống mốc 30 phút gần nhất tính từ 07:00. Ví dụ 18:11 → `Bc=18:00`, 18:40 → `Bc=18:30`, 19:20 → `Bc=19:00`, 19:30 → `Bc=19:30`. Timestamp nguồn `B` vẫn giữ nguyên.
 - `W = (Bc-Ac) - overlap(Ac,Bc,R0,R1)`.
 
 - `T100 = min(W, 28.800)`.
@@ -44,7 +43,7 @@ Không được giả định một ca kéo dài nhiều ngày khi nguồn thi�
 - Đi muộn `L = max(A-S, 0)`.
 - Về sớm `E = max(39.600 - [(B-S)-overlap(S,B,R0,R1)], 0)`, với `B ≥ S`.
 
-Ca chuẩn 07:00–19:00 sau khi trừ một giờ nghỉ có `W=39.600` giây, tương ứng 8 giờ 100% và 3 giờ 150%. Đi muộn/về sớm độc lập; về sớm so với 19:00 và không dùng giờ vào thực tế. `B<S` hoặc timestamp không xác định là ngoại lệ chặn.
+Ca chuẩn 07:00–19:00 sau khi trừ một giờ nghỉ có `W=39.600` giây, tương ứng 8 giờ 100% và 3 giờ 150%. Đi muộn/về sớm độc lập; về sớm so với 19:00, dùng `B` thực tế và không dùng giờ vào thực tế. `B<S` hoặc timestamp không xác định là ngoại lệ chặn.
 
 Nếu `D` là Chủ nhật, DEC-010 thay phân bổ thường ở trên bằng `T200=W`; `T100=T130=T150=T210=T230=0`. Cách tính `Ac`, `Bc`, nghỉ, `W`, đi muộn và về sớm không đổi.
 

@@ -145,6 +145,28 @@ async function main() {
     },
   });
   await prisma.shiftRule.upsert({
+    where: { shiftId_version: { shiftId: ca1.id, version: 4 } },
+    update: {},
+    create: {
+      shiftId: ca1.id,
+      version: 4,
+      effectiveFrom: new Date('2026-09-01T00:00:00Z'),
+      scheduledStartSeconds: 25_200,
+      scheduledCompletionSeconds: 68_400,
+      breakStartSeconds: 43_200,
+      breakEndSeconds: 46_800,
+      tiers: {
+        tier100: 28_800,
+        tier150After: 28_800,
+        targetWorkedSeconds: 39_600,
+        countEarlyArrivalSeconds: false,
+        checkOutBlockSeconds: 1_800,
+        postCompletionBlockSeconds: 1_800,
+        sundayTierPercentage: 200,
+      },
+    },
+  });
+  await prisma.shiftRule.upsert({
     where: { shiftId_version: { shiftId: ca3.id, version: 1 } },
     update: {},
     create: {

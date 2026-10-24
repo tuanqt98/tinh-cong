@@ -6,7 +6,7 @@ Trạng thái tổng thể: **`DEVELOPMENT_COMPLETE_WITH_BLOCKERS`**. Không pro
 
 ## Hoàn thành
 
-- Phase 0: kế thừa tài liệu/audit; ghi DEC-001–DEC-010 và giữ phần chưa duyệt OPEN.
+- Phase 0: kế thừa tài liệu/audit; ghi DEC-001–DEC-011 và giữ phần chưa duyệt OPEN.
 - Phase 1: attendance engine độc lập; Ca 1/Ca 3, break overlap, L/E, validation nhiều lỗi, duplicate/multiple-row guard.
 - Phase 2: NestJS, Prisma/PostgreSQL 16, migration, seed synthetic, JWT refresh, lockout, RBAC và data scope, Swagger.
 - Phase 3: React/Vite/Tailwind/shadcn-style, responsive và đủ 12 màn hình kết nối API.
@@ -16,12 +16,12 @@ Trạng thái tổng thể: **`DEVELOPMENT_COMPLETE_WITH_BLOCKERS`**. Không pro
 
 ## Kết quả kiểm chứng
 
-- 38/38 engine unit tests PASS, gồm Ca 1 07:00–19:00, Ca 3 19:00–07:00, không tính vào sớm, khối đủ 30 phút, rule lịch sử và phân bổ Chủ nhật Ca 1 200%/Ca 3 230% theo `shiftDate`.
+- 39/39 engine unit tests PASS, gồm Ca 1 07:00–19:00 với block giờ ra toàn ca, Ca 3 19:00–07:00, không tính vào sớm, rule lịch sử và phân bổ Chủ nhật Ca 1 200%/Ca 3 230% theo `shiftDate`.
 - 32/32 API unit/service/security/export/import-policy tests PASS, gồm guard PATCH nhân viên rỗng, guard kỳ bất biến, regression confirm 2.765 dòng, source-shift, search không dấu, tổng hợp và chi tiết/PDF theo revision mới nhất.
-- 13/13 API + PostgreSQL integration tests PASS trên database mới sau đủ năm migration và seed synthetic; gồm rule v3 Ca 1/Ca 3, mức Chủ nhật 200%/230%, guard không backdate trước 01/09, revision bất biến, source-shift, quản lý/import nhân viên, attendance summary/export và detail/PDF có RBAC scope.
+- 13/13 API + PostgreSQL integration tests PASS trên database mới sau đủ sáu migration và seed synthetic; gồm Ca 1 rule v4, Ca 3 rule v3, mức Chủ nhật 200%/230%, guard không backdate trước 01/09, revision bất biến, source-shift, quản lý/import nhân viên, attendance summary/export và detail/PDF có RBAC scope.
 - 20/20 Playwright Chromium tests PASS, gồm refresh access token, chống confirm lặp, raw import, visual QA Import Excel, màn nhân viên, Bảng công tổng hợp và Chi tiết bảng công.
 - Typecheck và production build toàn monorepo PASS.
-- Migration/seed PostgreSQL PASS; production build API/web PASS. Image Dockerfile cho DEC-010 chưa rebuild.
+- Migration/seed PostgreSQL PASS; production build API/web PASS. Image Dockerfile cho DEC-011 chưa rebuild.
 - Docker runtime: DB/API/web healthy; login synthetic và dashboard qua Nginx PASS.
 - Backup/restore: SHA-256 tạo được, restore DB tạm đủ 25 bảng PASS.
 - Synthetic 1.000 NV: query 43,69 ms, engine 6,15 ms, tổng 175,02 ms trong lần đo development (lần đo lại gần nhất: query 16,72 ms, engine 5,66 ms).
@@ -29,6 +29,7 @@ Trạng thái tổng thể: **`DEVELOPMENT_COMPLETE_WITH_BLOCKERS`**. Không pro
 - DEC-008: rule Ca 3 version 2 hiệu lực từ 01/09/2026 dùng khung 19:00–07:00, nghỉ 00:00–01:00; không tính trước 19:00, phần sau 07:00 chỉ nhận từng khối đủ 30 phút, phân bổ 4 giờ 100% + 4 giờ 130% + phần còn lại 210%. Raw giữ nguyên; thay đổi rule tạo revision mới và kỳ LOCKED/PUBLISHED không được tính lại trực tiếp.
 - DEC-009: rule Ca 1 version 2 hiệu lực từ 01/09/2026 dùng khung 07:00–19:00, nghỉ 12:00–13:00; không tính trước 07:00, phần sau 19:00 chỉ nhận từng khối đủ 30 phút, phân bổ 8 giờ 100% + phần còn lại 150%. Raw giữ nguyên; rule lịch sử không bị sửa và kỳ LOCKED/PUBLISHED không được tính lại trực tiếp.
 - DEC-010: rule version 3 của cả Ca 1/Ca 3 hiệu lực từ 01/09/2026 phân bổ toàn bộ `W` vào 200% cho Ca 1 và 230% cho Ca 3 khi `shiftDate` là Chủ nhật; tier khác bằng 0. Ca 3 kết thúc thứ Hai vẫn dùng Chủ nhật của ngày bắt đầu ca. Schema/API/UI/Excel/PDF đã có hai trường mới; tổng sáu tier bằng `W`.
+- DEC-011: Ca 1 rule version 4 hiệu lực từ 01/09/2026 hạ giờ ra dùng để tính công xuống mốc 30 phút gần nhất trong toàn ca. Raw timestamp giữ nguyên; về sớm vẫn dùng giờ ra thực tế. `06:37–18:11` tính `07:00–18:00`, còn 10 giờ sau nghỉ.
 - Hardening fail-closed: `SOURCE_MASTER_PROVISIONING_ENABLED=false`; API vẫn từ chối tự tạo hồ sơ nhân viên/phòng ban khi chưa có quyết định, UI vô hiệu hóa thao tác, ngoại lệ và dashboard áp data scope backend.
 - Redesign Import Excel hoàn tất ở mức development: layout dùng chung mới, sidebar/topbar, stepper động, upload/mapping/validation/preview/action bar và lịch sử import được tích hợp lại với API hiện hữu. Ảnh before/target/after đã lưu trong `docs/ui-reference/`; chưa tuyên bố pixel-perfect vì chưa có ngưỡng image diff tự động và chưa có logo chính thức.
 - Màn 05 Bảng công tổng hợp đã thay trang JSON bằng UI/API thật: chín KPI, kỳ/phòng ban/trạng thái, search/ca/trạng thái xử lý, sort + phân trang server-side, bảng 20 cột, tổng toàn tập lọc, detail theo employee + period và Excel toàn tập lọc. Aggregate chỉ cộng revision mới nhất `VALID`; workdays giữ `N/A`, period status tách processing status và backend scope vẫn fail-closed. Ảnh target/after ở `docs/ui-reference/attendance-summary-target.png` và `docs/ui-evidence/attendance-summary-after.png`; đối chiếu thủ công 1536×1024, chưa có image-diff tự động nên không tuyên bố pixel-perfect 100%.
@@ -63,6 +64,10 @@ Gate DEC-010 ngày 24/10/2026: ESLint PASS 0 warning; Prisma schema validate PAS
 
 Runtime development DEC-010 ngày 24/10 đã được cập nhật bằng artifact API/web trong writable layer sau khi `docker compose build api web` tiếp tục treo không log và đúng tiến trình buildx được dừng có kiểm tra. Không recreate/reset PostgreSQL. Hai migration Ca 1/Chủ nhật đã áp dụng, nâng tổng số migration lên năm; import `SX.xlsx` đã `ACCEPTED` được xử lý lại thành công với 1.726 latest calculation. Tháng 09 có 39 dòng/1.161.300 giây ở 200% và một dòng/38.820 giây ở 230%; NV0001 ngày 06/09 dùng revision 3/rule v3 và toàn bộ 36.480 giây ở 200%. DB/API/web healthy; API trực tiếp, proxy và Nginx HTTP 200; bundle mới có cả 200%/230%. Image Dockerfile tái lập và đối chiếu HR/UAT vẫn OPEN/PARTIAL.
 
+Gate DEC-011 ngày 24/10/2026: ESLint PASS 0 warning; Prisma validate PASS; typecheck PASS; production build PASS; engine 39/39; API 32/32; PostgreSQL integration 13/13 trên DB mới sau đủ sáu migration + seed; Playwright 20/20. Tổng **104 PASS**, 0 FAIL, 0 SKIP. Regression unit/DB giữ raw `06:37/18:11`, chọn Ca 1 rule v4 và tính đúng 36.000 giây với về sớm 2.940 giây; DB tạm đã xóa trong `finally`.
+
+Runtime development DEC-011 đã được cập nhật bằng artifact API/engine trong writable layer, không recreate/reset PostgreSQL. Migration thứ sáu áp dụng thành công và `SX.xlsx` được xử lý lại thành 1.726 latest calculation. API proxy của NV0001 ngày 25/09 trả revision 4, engine `2026-10-24-dec011`, raw `06:37/18:11`, 36.000 giây công gồm 28.800 giây 100% + 7.200 giây 150%, về sớm 2.940 giây. Tổng tháng 09 còn 64.134.180 giây; DB/API/web healthy và API trực tiếp/proxy/Nginx đều HTTP 200. Image Dockerfile tái lập và đối chiếu HR/UAT vẫn OPEN/PARTIAL.
+
 Runtime local Màn 06 đã được cập nhật bằng artifact API/web đã kiểm thử trong writable layer, không reset PostgreSQL. DB/API/web healthy; API trực tiếp, API qua proxy và Nginx đều HTTP 200. Smoke có xác thực qua cổng `8180` xác nhận PDF HTTP 200 và kỳ 09/2026 trả 31 dòng chi tiết cho một nhân viên đã tính, 25 ngày có mặt, không lặp `rawId` và `workingDaysAvailable=false`. Image tag chưa rebuild từ Dockerfile nên readiness Docker vẫn PARTIAL.
 
 Runtime local ngày 23/10 đã được cập nhật bằng build artifact đã kiểm thử trong writable layer của container API/web hiện tại sau khi `docker commit` bị treo; tiến trình commit được kết thúc có kiểm tra và không reset DB. DB/API/web healthy; API trực tiếp/proxy và Nginx đều HTTP 200. Smoke đăng nhập trên cổng `8180` xác nhận đúng năm cột, Import/Tải mẫu, dialog và bốn header Excel. Image tag vẫn là checkpoint cũ nên bằng chứng Dockerfile tái lập vẫn PARTIAL.
@@ -87,10 +92,11 @@ Chi tiết và các lần lỗi đã sửa: [TEST_REPORT](file:///D:/chamCong/do
 | DEC-008 / Ca 3        | CONFIRMED, hiệu lực 01/09/2026     | 19:00–07:00; không tính vào sớm; sau 07:00 theo khối đủ 30 phút; revision bất biến        |
 | DEC-009 / Ca 1        | CONFIRMED, hiệu lực 01/09/2026     | 07:00–19:00; không tính vào sớm; sau 19:00 theo khối đủ 30 phút; revision bất biến        |
 | DEC-010 / Chủ nhật    | CONFIRMED, hiệu lực 01/09/2026     | theo `shiftDate`; Ca 1 toàn bộ 200%, Ca 3 toàn bộ 230%; tổng sáu tier bằng thời gian công |
+| DEC-011 / block Ca 1  | CONFIRMED, hiệu lực 01/09/2026     | giờ ra tính công hạ theo block 30 phút toàn ca; raw/về sớm dùng timestamp thực tế         |
 
 ## Blocker
 
-1. `SX.xlsx` đã `ACCEPTED` với 2.765 raw rows; 83/92 mã nguồn có master và 1.726 latest calculation đã được tạo revision mới theo DEC-008/DEC-009/DEC-010 trên runtime development. Đây không phải oracle HR/UAT. Còn 9 mã/270 dòng thiếu hồ sơ, 694 dòng ca không hỗ trợ, 65 dòng thiếu evidence timestamp và 10 dòng nhiều bản ghi cùng nhân viên/ngày ca; không tự provision hay tính các dòng bị chặn.
+1. `SX.xlsx` đã `ACCEPTED` với 2.765 raw rows; 83/92 mã nguồn có master và 1.726 latest calculation đã được tạo revision mới theo DEC-008–DEC-011 trên runtime development. Đây không phải oracle HR/UAT. Còn 9 mã/270 dòng thiếu hồ sơ, 694 dòng ca không hỗ trợ, 65 dòng thiếu evidence timestamp và 10 dòng nhiều bản ghi cùng nhân viên/ngày ca; không tự provision hay tính các dòng bị chặn.
 2. DEC-002 đã đủ cho trường hợp `Ca3` nguồn hiện tại theo DEC-007; các trường hợp checkout khác ngoài tiêu chí đã chốt vẫn OPEN.
 3. Q10/Q11 và quyền/luồng chốt, phát hành, chỉnh sau khóa chưa duyệt.
 4. Thiếu mẫu PDF/logo chính thức, UAT và staging security/load theo SLA.

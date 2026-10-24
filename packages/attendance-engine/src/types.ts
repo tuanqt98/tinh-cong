@@ -62,6 +62,7 @@ export interface EngineShiftRule {
   breakEndSeconds: number;
   targetWorkedSeconds: number;
   countEarlyArrivalSeconds: boolean;
+  checkOutBlockSeconds: number | null;
   postCompletionBlockSeconds: number | null;
   sundayTierPercentage: 200 | 230 | null;
 }
@@ -88,7 +89,7 @@ export interface AttendanceResult {
   checkOutEpochSeconds: number | null;
   exceptions: AttendanceException[];
   calculation: AttendanceCalculation | null;
-  ruleVersion: '2026-10-23-dec010';
+  ruleVersion: '2026-10-24-dec011';
 }
 
 export interface DuplicateCandidate {

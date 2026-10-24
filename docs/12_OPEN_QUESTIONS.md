@@ -28,7 +28,7 @@ Mức ưu tiên: P0-E cần trước khi hoàn tất toàn bộ chức năng eng
 
 1. Tiêu chí ngày ca/ngày ra ngoài trường hợp nguồn hiện tại đã được DEC-007 chốt.
 2. Quy trình HR xử lý file sửa/file nhiều kỳ; khóa trùng đã chốt không tạo quyền thay thế tự động.
-3. Alias ca ngoài đúng `Ca1`/`Ca3` và cách ly dữ liệu ngoài Ca 1/Ca 3. Khung/khối tính Ca 3 đã chốt tại DEC-008, Ca 1 tại DEC-009 và phân bổ Chủ nhật tại DEC-010, không còn là câu hỏi mở.
+3. Alias ca ngoài đúng `Ca1`/`Ca3` và cách ly dữ liệu ngoài Ca 1/Ca 3. Khung/khối tính Ca 3 đã chốt tại DEC-008, Ca 1 tại DEC-009/DEC-011 và phân bổ Chủ nhật tại DEC-010, không còn là câu hỏi mở.
 4. Expected độc lập của HR và dữ liệu nguồn thực tế để đối chiếu.
 5. Taxonomy lỗi chặn đầy đủ và quyền xử lý ngoại lệ; trước khi chốt, mọi lỗi chặn vẫn phải bằng 0.
 

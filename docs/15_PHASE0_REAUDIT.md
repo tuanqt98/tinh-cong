@@ -26,6 +26,7 @@ Không quyết định nào bị diễn giải thành quyền tự suy quy tắc
 - Ca 1 tại thời điểm tái audit: bắt đầu 08:00, đủ 8 giờ lúc 17:00. Nội dung này là bằng chứng lịch sử và đã được DEC-009 ngày 23/10/2026 thay bằng 07:00–19:00, nghỉ 12:00–13:00, 8 giờ đầu 100%, sau 8 giờ 150%.
 - Ca 3 tại thời điểm tái audit: bắt đầu 22:00. Nội dung này là bằng chứng lịch sử và đã được DEC-008 ngày 23/10/2026 thay bằng 19:00–07:00, nghỉ 00:00–01:00, 4 giờ đầu 100%, 4 giờ tiếp 130%, sau 8 giờ 210%.
 - Phân bổ ngày thường nêu trên đã được DEC-010 ngày 23/10/2026 bổ sung ngoại lệ Chủ nhật theo ngày bắt đầu ca: toàn bộ Ca 1 ở mức 200%, toàn bộ Ca 3 ở mức 230%; các tier khác bằng 0.
+- DEC-011 ngày 24/10/2026 tiếp tục mở rộng block giờ ra Ca 1 thành block 30 phút trong toàn ca; timestamp nguồn và chỉ tiêu về sớm vẫn dùng giờ thực tế.
 - Đi muộn/về sớm độc lập; thời gian công dựa trên vào/ra thực tế và chỉ trừ phần giao giờ nghỉ.
 - Nội bộ số nguyên giây; không làm tròn, không nhân hệ số vào duration.
 

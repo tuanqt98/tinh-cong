@@ -117,6 +117,19 @@ Quy ước trạng thái đánh giá lại:
 - **Quan hệ quyết định:** DEC-010 chỉ thay phân bổ mức công của DEC-008/DEC-009 khi `D` là Chủ nhật; phân bổ ngày thường của hai quyết định đó vẫn giữ nguyên.
 - **Tài liệu liên quan:** `01_BUSINESS_REQUIREMENTS.md`, `02_ATTENDANCE_RULES.md`, `08_TEST_CASES.md`, `13_PROGRESS_REPORT.md`, `TEST_REPORT.md`.
 
+## DEC-011 – Block giờ ra 30 phút trong toàn bộ Ca 1
+
+- **Trạng thái:** `CONFIRMED`.
+- **Ngày xác nhận:** 24/10/2026.
+- **Người xác nhận:** Chủ dự án.
+- **Hiệu lực tính toán:** từ ngày công 01/09/2026; áp dụng bằng Ca 1 `shift_rule` version 4, không sửa hoặc xóa rule/calculation lịch sử và không tự backdate cho dữ liệu trước ngày này.
+- **Nội dung:** với Ca 1, giờ ra dùng để tính công được hạ xuống mốc 30 phút gần nhất trong toàn bộ ca, neo từ 07:00. Vì vậy `06:37–18:11` tính khoảng `07:00–18:00`; ra 18:40 tính đến 18:30; ra 19:20 tính đến 19:00; ra 19:30 giữ 19:30. Giờ vào trước 07:00 tiếp tục chỉ được tính từ 07:00.
+- **Dữ liệu nguồn và chỉ tiêu độc lập:** timestamp vào/ra raw và normalization giữ nguyên, không bị làm tròn hoặc ghi đè. Đi muộn và về sớm tiếp tục dùng timestamp thực tế; riêng về sớm vẫn so với 19:00 và độc lập với thời gian được tính công. Do đó `18:11` có thể được tính công đến 18:00 nhưng về sớm vẫn là 49 phút.
+- **Phân bổ:** sau khi xác định `W` bằng giờ ra đã áp block, ngày thường tiếp tục phân bổ 8 giờ đầu 100% và phần vượt 8 giờ 150%; Chủ nhật tiếp tục đưa toàn bộ `W` vào 200% theo DEC-010.
+- **Audit/revision:** engine version `2026-10-24-dec011`; input hash chứa rule snapshot. Tính lại phải tạo revision mới; kỳ `LOCKED/PUBLISHED` không được sửa trực tiếp.
+- **Quan hệ quyết định:** DEC-011 mở rộng block 30 phút của DEC-009 từ phần sau 19:00 sang toàn bộ giờ ra Ca 1; không thay đổi Ca 3 của DEC-008 hay phân bổ Chủ nhật của DEC-010.
+- **Tài liệu liên quan:** `01_BUSINESS_REQUIREMENTS.md`, `02_ATTENDANCE_RULES.md`, `08_TEST_CASES.md`, `13_PROGRESS_REPORT.md`, `TEST_REPORT.md`.
+
 ## Tổng hợp
 
 | Quyết định            | Đánh giá                              | Phần vẫn OPEN có ảnh hưởng chính                                |
@@ -131,3 +144,4 @@ Quy ước trạng thái đánh giá lại:
 | DEC-008 / Ca 3        | `CONFIRMED`                           | expected HR/UAT trên toàn bộ dữ liệu thật vẫn OPEN              |
 | DEC-009 / Ca 1        | `CONFIRMED`                           | expected HR/UAT trên toàn bộ dữ liệu thật vẫn OPEN              |
 | DEC-010 / Chủ nhật    | `CONFIRMED`                           | expected HR/UAT trên toàn bộ dữ liệu thật vẫn OPEN              |
+| DEC-011 / block Ca 1  | `CONFIRMED`                           | expected HR/UAT trên toàn bộ dữ liệu thật vẫn OPEN              |

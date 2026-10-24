@@ -148,7 +148,7 @@ export function calculateAttendance(
       checkOutEpochSeconds,
       exceptions,
       calculation: null,
-      ruleVersion: '2026-10-23-dec010',
+      ruleVersion: '2026-10-24-dec011',
     };
   }
 
@@ -161,8 +161,11 @@ export function calculateAttendance(
   const creditedCheckIn = timeline.countEarlyArrivalSeconds
     ? safeCheckIn
     : Math.max(safeCheckIn, timeline.scheduledStart);
-  const creditedCheckOut =
-    timeline.postCompletionBlockSeconds && safeCheckOut > timeline.scheduledCompletion
+  const creditedCheckOut = timeline.checkOutBlockSeconds
+    ? timeline.scheduledStart +
+      Math.floor((safeCheckOut - timeline.scheduledStart) / timeline.checkOutBlockSeconds) *
+        timeline.checkOutBlockSeconds
+    : timeline.postCompletionBlockSeconds && safeCheckOut > timeline.scheduledCompletion
       ? timeline.scheduledCompletion +
         Math.floor(
           (safeCheckOut - timeline.scheduledCompletion) / timeline.postCompletionBlockSeconds,
@@ -206,6 +209,6 @@ export function calculateAttendance(
     checkOutEpochSeconds: safeCheckOut,
     exceptions: [],
     calculation,
-    ruleVersion: '2026-10-23-dec010',
+    ruleVersion: '2026-10-24-dec011',
   };
 }

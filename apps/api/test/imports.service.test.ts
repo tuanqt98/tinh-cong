@@ -238,8 +238,8 @@ describe('ImportsService duplicate key policy', () => {
             active: true,
             rules: [
               {
-                id: 'rule-ca1-v3',
-                version: 3,
+                id: 'rule-ca1-v4',
+                version: 4,
                 effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
                 effectiveTo: null,
                 scheduledStartSeconds: 25_200,
@@ -252,6 +252,7 @@ describe('ImportsService duplicate key policy', () => {
                   tier150After: 28_800,
                   targetWorkedSeconds: 39_600,
                   countEarlyArrivalSeconds: false,
+                  checkOutBlockSeconds: 1_800,
                   postCompletionBlockSeconds: 1_800,
                   sundayTierPercentage: 200,
                 },

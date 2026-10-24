@@ -122,6 +122,23 @@ describe('Ca 1', () => {
     ).toMatchObject({ workedSeconds: 41_400, tier150Seconds: 12_600 });
   });
 
+  it('hạ giờ ra trong ca xuống mốc 30 phút gần nhất', () => {
+    expect(
+      calculation({
+        checkInAt: '2026-10-01T06:37:00+07:00',
+        checkOutAt: '2026-10-01T18:11:00+07:00',
+      }),
+    ).toMatchObject({
+      presenceSeconds: 39_600,
+      breakSeconds: 3_600,
+      workedSeconds: 36_000,
+      tier100Seconds: 28_800,
+      tier150Seconds: 7_200,
+      lateSeconds: 0,
+      earlySeconds: 2_940,
+    });
+  });
+
   it('vẫn tính được rule Ca 1 lịch sử 08:00–17:00 qua cấu hình versioned', () => {
     const result = calculateAttendance(
       input({
@@ -139,6 +156,7 @@ describe('Ca 1', () => {
           breakEndSeconds: 46_800,
           targetWorkedSeconds: 28_800,
           countEarlyArrivalSeconds: true,
+          checkOutBlockSeconds: null,
           postCompletionBlockSeconds: null,
           sundayTierPercentage: null,
         },

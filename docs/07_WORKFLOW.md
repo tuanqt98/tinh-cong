@@ -1,6 +1,6 @@
 # 07 – Workflow tổng thể
 
-Cập nhật ngày 24/10/2026 theo DEC-001–DEC-010. Workflow Phase 1 dừng ở xuất `BangCong` và `NgoaiLe`; các bước phê duyệt nhiều cấp, PDF, phát hành và portal thuộc Phase sau.
+Cập nhật ngày 24/10/2026 theo DEC-001–DEC-011. Workflow Phase 1 dừng ở xuất `BangCong` và `NgoaiLe`; các bước phê duyệt nhiều cấp, PDF, phát hành và portal thuộc Phase sau.
 
 ## Workflow Phase 1
 

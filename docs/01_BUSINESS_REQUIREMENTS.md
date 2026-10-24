@@ -8,21 +8,21 @@ Cập nhật: 21/10/2026. Trạng thái: yêu cầu Phase 0 đã được kế t
 
 Repository hiện đã có ứng dụng development và `SX.xlsx` đã được kiểm tra cấu trúc ngày 22/10/2026. Vẫn thiếu lịch/mapping/expected HR và mẫu PDF chính thức để hoàn tất UAT.
 
-| Đầu vào                                 | Tình trạng                                     | Ảnh hưởng                                                                          |
-| --------------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Đặc tả gốc                              | Đã lưu/đọc                                     | cơ sở công thức và yêu cầu tổng thể                                                |
-| DEC-001–DEC-010                         | Chủ dự án xác nhận đến 23/10/2026              | cập nhật ngày ca, ngày ra, trùng, nhiều dòng, bất thường, khung ca và mức Chủ nhật |
-| SX.xlsx                                 | Chưa được cung cấp                             | chưa audit/mapping/đối chiếu dữ liệu thực                                          |
-| Lịch phân công hoặc quy tắc ánh xạ lịch | Chưa được cung cấp                             | chưa chứng minh ngày ca cho dòng thực tế                                           |
-| Code Phase 1                            | Chưa được cung cấp hoặc xác nhận không tồn tại | chưa đối chiếu thuật toán/test hiện có                                             |
-| Expected độc lập của HR                 | Chưa có                                        | chưa chạy đối chiếu nghiệp vụ                                                      |
-| Mẫu PDF/bảng công                       | Chưa có                                        | ngoài Phase 1 hiện tại; cần ở Phase sau                                            |
+| Đầu vào                                 | Tình trạng                                     | Ảnh hưởng                                                                                        |
+| --------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Đặc tả gốc                              | Đã lưu/đọc                                     | cơ sở công thức và yêu cầu tổng thể                                                              |
+| DEC-001–DEC-011                         | Chủ dự án xác nhận đến 24/10/2026              | cập nhật ngày ca, ngày ra, trùng, nhiều dòng, bất thường, khung ca, block giờ ra và mức Chủ nhật |
+| SX.xlsx                                 | Chưa được cung cấp                             | chưa audit/mapping/đối chiếu dữ liệu thực                                                        |
+| Lịch phân công hoặc quy tắc ánh xạ lịch | Chưa được cung cấp                             | chưa chứng minh ngày ca cho dòng thực tế                                                         |
+| Code Phase 1                            | Chưa được cung cấp hoặc xác nhận không tồn tại | chưa đối chiếu thuật toán/test hiện có                                                           |
+| Expected độc lập của HR                 | Chưa có                                        | chưa chạy đối chiếu nghiệp vụ                                                                    |
+| Mẫu PDF/bảng công                       | Chưa có                                        | ngoài Phase 1 hiện tại; cần ở Phase sau                                                          |
 
 ## Mục tiêu nghiệp vụ
 
 Ứng dụng nội bộ quản lý chấm công cho Công ty TNHH In Nhật Hàn. Dữ liệu nguồn chỉ dùng bảy trường: mã NV, tên NV, phòng ban, ngày chấm công, giờ vào, giờ ra, tên ca. Không dùng Công, Giờ, TC1/2/3, Ký hiệu, Vào trễ hoặc Ra sớm làm đầu vào/kỳ vọng nếu HR chưa xác nhận độc lập.
 
-Ngày chấm công là ngày bắt đầu ca theo phân ca nguồn đã duyệt (DEC-001/DEC-007), không đồng nghĩa ngày lịch của timestamp vào/ra. Theo DEC-008, Ca 3 hiện hành có khung 19:00–07:00 hôm sau; chỉ suy ngày ra hôm sau khi có bằng chứng phù hợp, dữ liệu mơ hồ chuyển `NEEDS_REVIEW` và không tính (DEC-002). Theo DEC-009, Ca 1 hiện hành có khung 07:00–19:00; không tính phần trước 07:00 và chỉ tính phần sau 19:00 theo từng khối đủ 30 phút.
+Ngày chấm công là ngày bắt đầu ca theo phân ca nguồn đã duyệt (DEC-001/DEC-007), không đồng nghĩa ngày lịch của timestamp vào/ra. Theo DEC-008, Ca 3 hiện hành có khung 19:00–07:00 hôm sau; chỉ suy ngày ra hôm sau khi có bằng chứng phù hợp, dữ liệu mơ hồ chuyển `NEEDS_REVIEW` và không tính (DEC-002). Theo DEC-009/DEC-011, Ca 1 hiện hành có khung 07:00–19:00; không tính phần trước 07:00 và giờ ra dùng để tính công được hạ xuống mốc 30 phút gần nhất trong toàn ca, trong khi timestamp nguồn và chỉ tiêu về sớm vẫn dùng giờ thực tế.
 
 ## Phạm vi Phase 1 đã chốt
 
