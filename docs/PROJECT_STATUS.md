@@ -1,6 +1,6 @@
 # Trạng thái dự án Hệ thống chấm công In Nhật Hàn
 
-Ngày cập nhật: 23/10/2026 (`Asia/Ho_Chi_Minh`).
+Ngày cập nhật: 24/10/2026 (`Asia/Ho_Chi_Minh`).
 Checkpoint: **`DEVELOPMENT_COMPLETE_WITH_BLOCKERS`** (Không production-ready).
 
 ## 1. Tổng quan trạng thái
@@ -13,10 +13,10 @@ Hệ thống được bảo vệ bằng các chốt chặn an toàn (fail-closed
 
 | Hạng mục kiểm thử                | Lệnh thực hiện                                       | Kết quả thực tế                 | Ghi chú                                                                                              |
 | -------------------------------- | ---------------------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| **Engine Unit Tests**            | `pnpm.cmd test:run` (engine)                         | **31/31 PASS** (2 files)        | Tính công số nguyên giây, bảo toàn tier, Ca 1/Ca 3, đi muộn/về sớm độc lập                           |
-| **API Unit & Service Tests**     | `pnpm.cmd test:run` (api)                            | **29/29 PASS** (7 files)        | Thêm aggregate revision mới nhất, search không dấu và Excel summary chống formula injection          |
-| **PostgreSQL Integration Tests** | migration + seed DB mới; `pnpm.cmd test:integration` | **9/9 PASS** (1 file)           | PostgreSQL 16 thật; thêm summary/export, RBAC scope và validation kỳ                                 |
-| **Browser E2E Tests**            | `pnpm.cmd test:e2e`                                  | **17/17 PASS** (Chromium)       | Thêm Bảng công tổng hợp, filter/URL/export/detail/mobile và visual QA 1536×1024                      |
+| **Engine Unit Tests**            | `pnpm.cmd test:run` (engine)                         | **38/38 PASS** (2 files)        | Tính công số nguyên giây, bảo toàn sáu tier và Chủ nhật theo DEC-008/009/010                         |
+| **API Unit & Service Tests**     | `pnpm.cmd test:run` (api)                            | **32/32 PASS** (8 files)        | Detail/PDF, guard kỳ bất biến và revision mới                                                        |
+| **PostgreSQL Integration Tests** | migration + seed DB mới; `pnpm.cmd test:integration` | **13/13 PASS** (1 file)         | PostgreSQL 16 thật; rule v3, Chủ nhật 200%/230%, guard hiệu lực, report và RBAC scope                |
+| **Browser E2E Tests**            | `pnpm.cmd test:e2e`                                  | **20/20 PASS** (Chromium)       | Bảng công tổng hợp + Chi tiết bảng công, PDF, tabs, mobile và visual QA 1536×1024                    |
 | **ESLint**                       | `pnpm.cmd lint`                                      | **PASS, 0 warning**             | Flat config kiểm tra TypeScript/React/Node thật; không còn lint no-op                                |
 | **TypeScript Typecheck**         | `pnpm.cmd typecheck`                                 | **PASS** (5 workspace packages) | `@tinh-cong/attendance-engine`, `shared`, `ui`, `api`, `web`                                         |
 | **Production Build**             | `pnpm.cmd build`                                     | **PASS** (toàn monorepo)        | Build Vite web bundle và NestJS API distribution                                                     |
@@ -24,11 +24,19 @@ Hệ thống được bảo vệ bằng các chốt chặn an toàn (fail-closed
 | **Synthetic Scale Benchmark**    | `pnpm.cmd test:performance`                          | **PASS** (1.000 NV)             | Query: 16,72 ms, Engine: 5,66 ms, Tổng: 2.386,99 ms                                                  |
 | **Backup & SHA-256**             | `scripts/backup.ps1`                                 | **PASS**                        | Tạo bản sao lưu SQL và mã băm SHA-256 thành công                                                     |
 
-Tổng số test tự động ở lần chạy cuối sau khi nạp đủ biến môi trường: **86 PASS**, 0 FAIL, 0 SKIP (`31 engine + 29 API + 9 integration + 17 E2E`). Lần integration đầu của mốc Màn 05 migrate/seed thành công nhưng thiếu alias credential nên 0/9 test chạy; database tạm đã xóa và lần chạy lại trên DB mới khác đạt 9/9. Chi tiết ở `TEST_REPORT.md`.
+Tổng số test tự động ở lần chạy cuối sau khi nạp đủ biến môi trường: **103 PASS**, 0 FAIL, 0 SKIP (`38 engine + 32 API + 13 integration + 20 E2E`). Integration DEC-010 đạt 13/13 trên DB mới sau đủ năm migration và seed; DB tạm đã được xóa. Chi tiết ở `TEST_REPORT.md`.
 
 Màn Import Excel đã được xây dựng lại theo mockup: sidebar/topbar dùng chung, stepper động, upload kéo-thả, mapping bảy trường, validation summary, preview/search/filter/export lỗi/phân trang, action bar và view lịch sử. Ảnh bằng chứng trước/sau ở `docs/ui-reference/`. Chưa tuyên bố pixel-perfect vì chưa có automated image-diff threshold và chưa có logo chính thức.
 
-Màn Bảng công tổng hợp đã thay JSON bằng UI/API thật với bảy KPI, filter/sort/phân trang backend, bảng 18 cột, aggregate toàn tập lọc, detail theo nhân viên + kỳ và Excel có metadata/nhãn tạm. Chỉ revision mới nhất `VALID` được cộng; trạng thái xử lý tách trạng thái kỳ, scope kiểm tra ở backend và ngày làm việc giữ `N/A` khi chưa có policy. Visual evidence 1536×1024 đã lưu nhưng chưa có automated pixel-diff/UAT nên không tuyên bố pixel-perfect 100%.
+Màn Bảng công tổng hợp đã thay JSON bằng UI/API thật với chín KPI, filter/sort/phân trang backend, bảng 20 cột, aggregate toàn tập lọc, detail theo nhân viên + kỳ và Excel có metadata/nhãn tạm. Chỉ revision mới nhất `VALID` được cộng; trạng thái xử lý tách trạng thái kỳ, scope kiểm tra ở backend và ngày làm việc giữ `N/A` khi chưa có policy. Visual evidence 1536×1024 đã lưu nhưng chưa có automated pixel-diff/UAT nên không tuyên bố pixel-perfect 100%.
+
+Màn Chi tiết bảng công đã thay bảng thô bằng UI/API thật với hồ sơ, 12 KPI, điều hướng kỳ, bảng ngày công, tổng hợp/biểu đồ, bảy trường nguồn, lịch sử điều chỉnh và PDF nháp. Chỉ revision mới nhất `VALID` được cộng, scope kiểm tra ở backend; ngày trống không tự biến thành ngày nghỉ và số ngày làm việc giữ `N/A`. Workflow chỉnh/chốt vẫn khóa. Visual target/after 1536×1024 đã lưu; chưa có automated image-diff/UAT/mẫu PDF chính thức.
+
+DEC-008 đã được triển khai ở source bằng rule Ca 3 v2 hiệu lực từ 01/09/2026: 19:00–07:00, không tính phần trước 19:00, chỉ nhận khối đủ 30 phút sau 07:00, 4 giờ 100% + 4 giờ 130% + phần vượt 8 giờ 210%. Raw giữ nguyên, thay đổi rule sinh revision mới và kỳ LOCKED/PUBLISHED không được tính lại trực tiếp. Chưa rebuild image runtime hoặc đối chiếu lại `SX.xlsx` với expected HR nên trạng thái deployment vẫn PARTIAL/BLOCKED.
+
+DEC-009 đã được triển khai ở source bằng rule Ca 1 v2 hiệu lực từ 01/09/2026: 07:00–19:00, không tính phần trước 07:00, chỉ nhận khối đủ 30 phút sau 19:00, 8 giờ 100% + phần vượt 8 giờ 150%. Raw và rule lịch sử giữ nguyên; chưa rebuild image runtime hoặc tính lại `SX.xlsx`, nên trạng thái deployment vẫn PARTIAL/BLOCKED.
+
+DEC-010 đã được triển khai ở source bằng rule v3 cho cả hai ca hiệu lực từ 01/09/2026: nếu `shiftDate` là Chủ nhật, toàn bộ công Ca 1 vào 200% và toàn bộ công Ca 3 vào 230%; các tier khác bằng 0. Schema, API, dashboard, tổng hợp/chi tiết, Excel và PDF đều đã có hai tier mới. Chưa rebuild image runtime hoặc tính lại `SX.xlsx`, nên trạng thái deployment vẫn PARTIAL/BLOCKED.
 
 ## 3. Các lỗi kỹ thuật đã phát hiện và tự động khắc phục
 
@@ -54,13 +62,13 @@ Màn Bảng công tổng hợp đã thay JSON bằng UI/API thật với bảy K
 
 ## 5. Danh sách Blocker cần quyết định / dữ liệu từ bên ngoài
 
-| STT | Mã / Hạng mục   | Trạng thái                             | Yêu cầu / Câu hỏi còn mở                                                                                                                           |
-| --- | --------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `Q01 / SX.xlsx` | **PARTIAL/BLOCKED**                    | File đã ACCEPTED 2.765 raw rows; 83/92 mã đã có master và tạo 1.726 calculation hợp lệ. Còn 9 mã/270 dòng thiếu master và chưa có expected HR/UAT. |
-| 2   | `DEC-002 / Q04` | **PARTIALLY_CONFIRMED**                | Trường hợp `Ca3` hiện tại đã có tiêu chí D+1 theo DEC-007; các dạng checkout khác thiếu căn cứ vẫn `NEEDS_REVIEW`.                                 |
-| 3   | `DEC-003 / Q05` | **PARTIALLY_CONFIRMED; KEY CONFIRMED** | Đã cấu hình `employeeCode,attendanceDate,shiftName`; còn mở quy trình file sửa/file nhiều kỳ.                                                      |
-| 4   | `Q10 / Q11`     | **OPEN**                               | Cần duyệt luồng phê duyệt (ai duyệt, tách vai trò lập/duyệt, điều chỉnh sau khóa). Hiện tại: tắt toàn bộ workflow.                                 |
-| 5   | `Q15 / PDF`     | **PARTIAL**                            | Cần mẫu bảng công chính thức, logo, tiêu đề công ty để thay thế watermark development.                                                             |
+| STT | Mã / Hạng mục   | Trạng thái                             | Yêu cầu / Câu hỏi còn mở                                                                                                                                                                 |
+| --- | --------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `Q01 / SX.xlsx` | **PARTIAL/BLOCKED**                    | File đã ACCEPTED 2.765 raw rows; 83/92 mã có master. 1.726 calculation hiện có được tạo trước DEC-008/009/010, chưa tính lại; còn 9 mã/270 dòng thiếu master và chưa có expected HR/UAT. |
+| 2   | `DEC-002 / Q04` | **PARTIALLY_CONFIRMED**                | Trường hợp `Ca3` hiện tại đã có tiêu chí D+1 theo DEC-007; các dạng checkout khác thiếu căn cứ vẫn `NEEDS_REVIEW`.                                                                       |
+| 3   | `DEC-003 / Q05` | **PARTIALLY_CONFIRMED; KEY CONFIRMED** | Đã cấu hình `employeeCode,attendanceDate,shiftName`; còn mở quy trình file sửa/file nhiều kỳ.                                                                                            |
+| 4   | `Q10 / Q11`     | **OPEN**                               | Cần duyệt luồng phê duyệt (ai duyệt, tách vai trò lập/duyệt, điều chỉnh sau khóa). Hiện tại: tắt toàn bộ workflow.                                                                       |
+| 5   | `Q15 / PDF`     | **PARTIAL**                            | Cần mẫu bảng công chính thức, logo, tiêu đề công ty để thay thế watermark development.                                                                                                   |
 
 ---
 

@@ -11,10 +11,21 @@ describe('exports synthetic', () => {
         findMany: vi.fn().mockResolvedValue([
           {
             raw: { employeeCode: '=1+1', employeeName: '+Mẫu', departmentName: 'Sản xuất' },
-            normalization: { shiftDate: new Date('2026-10-01'), checkInAt: new Date(), checkOutAt: new Date() },
+            normalization: {
+              shiftDate: new Date('2026-10-01'),
+              checkInAt: new Date(),
+              checkOutAt: new Date(),
+            },
             period: { month: 10, year: 2026 },
-            workedSeconds: 28_800, lateSeconds: 0, earlySeconds: 0,
-            tier100Seconds: 28_800, tier130Seconds: 0, tier150Seconds: 0, tier210Seconds: 0,
+            workedSeconds: 28_800,
+            lateSeconds: 0,
+            earlySeconds: 0,
+            tier100Seconds: 28_800,
+            tier130Seconds: 0,
+            tier150Seconds: 0,
+            tier200Seconds: 0,
+            tier210Seconds: 0,
+            tier230Seconds: 0,
             status: 'VALID',
           },
         ]),
@@ -26,13 +37,17 @@ describe('exports synthetic', () => {
     await workbook.xlsx.load(buffer as never);
     expect(workbook.getWorksheet('BangCong')?.getCell('A2').value).toBe("'=1+1");
     expect(workbook.getWorksheet('BangCong')?.getCell('B2').value).toBe("'+Mẫu");
+    expect(workbook.getWorksheet('BangCong')?.getCell('N1').value).toBe('200% (giây)');
+    expect(workbook.getWorksheet('BangCong')?.getCell('P1').value).toBe('230% (giây)');
   });
 
   it('xuất PDF snapshot bằng font tiếng Việt', async () => {
     const prisma = {
       timesheet: {
         findFirst: vi.fn().mockResolvedValue({
-          id: 't1', revision: 1, totalSeconds: 28_800,
+          id: 't1',
+          revision: 1,
+          totalSeconds: 28_800,
           snapshot: { workedSeconds: 28_800, note: 'Dữ liệu tổng hợp mẫu' },
           employee: { code: 'SYN-001', name: 'Nhân viên mẫu', department: { name: 'Sản xuất' } },
           period: { month: 10, year: 2026 },

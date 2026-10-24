@@ -1,6 +1,6 @@
 # 07 – Workflow tổng thể
 
-Cập nhật ngày 21/10/2026 theo DEC-001–DEC-006. Workflow Phase 1 dừng ở xuất `BangCong` và `NgoaiLe`; các bước phê duyệt nhiều cấp, PDF, phát hành và portal thuộc Phase sau.
+Cập nhật ngày 24/10/2026 theo DEC-001–DEC-010. Workflow Phase 1 dừng ở xuất `BangCong` và `NgoaiLe`; các bước phê duyệt nhiều cấp, PDF, phát hành và portal thuộc Phase sau.
 
 ## Workflow Phase 1
 
@@ -28,7 +28,7 @@ flowchart TD
 - Preview không phải confirm; không tạo dữ liệu công chính thức.
 - Chỉ dùng bảy trường nguồn. Tên ca/alias không rõ, lịch thiếu hoặc timestamp mơ hồ phải lưu lỗi, không tự sửa.
 - Ngày ca lấy theo lịch phân công; ngày timestamp vào/ra giữ riêng. Ca 3 vào sau 00:00 chỉ gắn ngày ca trước khi có căn cứ (DEC-001).
-- Ngày ra hôm sau chỉ được chuẩn hóa khi bằng chứng phù hợp lịch 22:00–07:00; lưu evidence. Thiếu căn cứ → `NEEDS_REVIEW`, không tính (DEC-002).
+- Ngày ra hôm sau chỉ được chuẩn hóa khi bằng chứng phù hợp phân ca nguồn Ca 3 19:00–07:00; lưu evidence. Thiếu căn cứ → `NEEDS_REVIEW`, không tính (DEC-002/DEC-007/DEC-008).
 
 ### Import nguyên tử
 

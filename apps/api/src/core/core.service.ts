@@ -56,7 +56,9 @@ export interface AttendanceSummaryRow {
   tier100Seconds: number;
   tier130Seconds: number;
   tier150Seconds: number;
+  tier200Seconds: number;
   tier210Seconds: number;
+  tier230Seconds: number;
   lateSeconds: number;
   earlySeconds: number;
   workingDays: number | null;
@@ -74,7 +76,23 @@ export interface AttendanceSummaryTotals {
   tier100Seconds: number;
   tier130Seconds: number;
   tier150Seconds: number;
+  tier200Seconds: number;
   tier210Seconds: number;
+  tier230Seconds: number;
+  lateSeconds: number;
+  earlySeconds: number;
+  attendanceDays: number;
+  exceptionCount: number;
+}
+
+export interface AttendanceDetailTotals {
+  workedSeconds: number;
+  tier100Seconds: number;
+  tier130Seconds: number;
+  tier150Seconds: number;
+  tier200Seconds: number;
+  tier210Seconds: number;
+  tier230Seconds: number;
   lateSeconds: number;
   earlySeconds: number;
   attendanceDays: number;
@@ -120,7 +138,9 @@ export class CoreService {
           tier100Seconds: true,
           tier130Seconds: true,
           tier150Seconds: true,
+          tier200Seconds: true,
           tier210Seconds: true,
+          tier230Seconds: true,
         },
       }),
       this.prisma.attendanceException.count({
@@ -158,7 +178,9 @@ export class CoreService {
         tier100: totals._sum.tier100Seconds ?? 0,
         tier130: totals._sum.tier130Seconds ?? 0,
         tier150: totals._sum.tier150Seconds ?? 0,
+        tier200: totals._sum.tier200Seconds ?? 0,
         tier210: totals._sum.tier210Seconds ?? 0,
+        tier230: totals._sum.tier230Seconds ?? 0,
       },
       openExceptions: exceptions,
       pendingPeriods,
@@ -807,17 +829,317 @@ export class CoreService {
   }
 
   async employeeAttendance(user: AuthenticatedUser, employeeId: string, periodId?: string) {
-    await this.getEmployee(user, employeeId);
-    return this.prisma.attendanceCalculation.findMany({
-      where: { raw: { employeeId }, ...(periodId ? { periodId } : {}) },
-      include: {
-        raw: true,
-        normalization: true,
-        period: true,
-        exceptions: true,
+    const employee = await this.prisma.employee.findFirst({
+      where: { id: employeeId, AND: [await this.employeeScope(user)] },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        position: true,
+        startDate: true,
+        status: true,
+        department: { select: { name: true } },
       },
-      orderBy: [{ normalization: { shiftDate: 'desc' } }, { revision: 'desc' }],
     });
+    if (!employee) throw new NotFoundException();
+
+    const period = periodId
+      ? await this.prisma.attendancePeriod.findUnique({ where: { id: periodId } })
+      : await this.prisma.attendancePeriod.findFirst({
+          orderBy: [{ year: 'desc' }, { month: 'desc' }],
+        });
+    if (periodId && !period) throw new NotFoundException('Không tìm thấy kỳ công.');
+    if (!period) {
+      return {
+        employee: {
+          ...employee,
+          departmentName: employee.department?.name ?? null,
+          department: undefined,
+        },
+        period: null,
+        rows: [],
+        adjustments: [],
+        totals: this.emptyAttendanceDetailTotals(),
+        workingDays: null,
+        workingDaysAvailable: false,
+        calculationVersion: { engineVersions: [], maxRevision: null },
+      };
+    }
+
+    const monthPrefix = `${period.year}-${String(period.month).padStart(2, '0')}`;
+    const rawRows = await this.prisma.attendanceRaw.findMany({
+      where: {
+        employeeId,
+        OR: [
+          { calculations: { some: { periodId: period.id } } },
+          { attendanceDateRaw: { startsWith: monthPrefix } },
+        ],
+      },
+      select: {
+        id: true,
+        rowNo: true,
+        employeeCode: true,
+        employeeName: true,
+        departmentName: true,
+        attendanceDateRaw: true,
+        checkInRaw: true,
+        checkOutRaw: true,
+        shiftNameRaw: true,
+        normalizations: {
+          orderBy: { revision: 'desc' },
+          take: 1,
+          select: {
+            revision: true,
+            shiftDate: true,
+            shiftCode: true,
+            checkInAt: true,
+            checkOutAt: true,
+          },
+        },
+        calculations: {
+          where: { periodId: period.id },
+          orderBy: { revision: 'desc' },
+          select: {
+            id: true,
+            revision: true,
+            status: true,
+            engineVersion: true,
+            presenceSeconds: true,
+            breakSeconds: true,
+            workedSeconds: true,
+            lateSeconds: true,
+            earlySeconds: true,
+            tier100Seconds: true,
+            tier130Seconds: true,
+            tier150Seconds: true,
+            tier200Seconds: true,
+            tier210Seconds: true,
+            tier230Seconds: true,
+            normalization: {
+              select: {
+                revision: true,
+                shiftDate: true,
+                shiftCode: true,
+                checkInAt: true,
+                checkOutAt: true,
+              },
+            },
+            exceptions: {
+              where: { status: ExceptionStatus.OPEN },
+              select: { id: true, code: true, blocking: true, status: true },
+            },
+          },
+        },
+        exceptions: {
+          where: { status: ExceptionStatus.OPEN },
+          select: { id: true, code: true, blocking: true, status: true },
+        },
+        adjustments: {
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            revision: true,
+            before: true,
+            after: true,
+            reason: true,
+            createdAt: true,
+            actor: { select: { id: true, username: true } },
+          },
+        },
+      },
+    });
+
+    const rows = rawRows
+      .map((raw) => {
+        const calculation = raw.calculations[0] ?? null;
+        const normalization = calculation?.normalization ?? raw.normalizations[0] ?? null;
+        const exceptionsById = new Map(
+          [...raw.exceptions, ...(calculation?.exceptions ?? [])].map((item) => [item.id, item]),
+        );
+        return {
+          id: calculation?.id ?? raw.id,
+          rawId: raw.id,
+          rowNo: raw.rowNo,
+          revision: calculation?.revision ?? normalization?.revision ?? 0,
+          status: calculation?.status ?? 'NEEDS_REVIEW',
+          engineVersion: calculation?.engineVersion ?? null,
+          shiftDate: normalization?.shiftDate ?? null,
+          shiftCode: normalization?.shiftCode ?? null,
+          checkInAt: normalization?.checkInAt ?? null,
+          checkOutAt: normalization?.checkOutAt ?? null,
+          presenceSeconds: calculation?.presenceSeconds ?? null,
+          breakSeconds: calculation?.breakSeconds ?? null,
+          workedSeconds: calculation?.workedSeconds ?? null,
+          lateSeconds: calculation?.lateSeconds ?? null,
+          earlySeconds: calculation?.earlySeconds ?? null,
+          tier100Seconds: calculation?.tier100Seconds ?? null,
+          tier130Seconds: calculation?.tier130Seconds ?? null,
+          tier150Seconds: calculation?.tier150Seconds ?? null,
+          tier200Seconds: calculation?.tier200Seconds ?? null,
+          tier210Seconds: calculation?.tier210Seconds ?? null,
+          tier230Seconds: calculation?.tier230Seconds ?? null,
+          exceptions: [...exceptionsById.values()],
+          source: {
+            employeeCode: raw.employeeCode,
+            employeeName: raw.employeeName,
+            departmentName: raw.departmentName,
+            attendanceDate: raw.attendanceDateRaw,
+            checkIn: raw.checkInRaw,
+            checkOut: raw.checkOutRaw,
+            shiftName: raw.shiftNameRaw,
+          },
+        };
+      })
+      .sort((left, right) => {
+        const leftDate = left.shiftDate?.getTime() ?? Number.MAX_SAFE_INTEGER;
+        const rightDate = right.shiftDate?.getTime() ?? Number.MAX_SAFE_INTEGER;
+        return leftDate - rightDate || left.rowNo - right.rowNo;
+      });
+
+    const validRows = rows.filter((row) => row.status === 'VALID');
+    const totals = validRows.reduce<AttendanceDetailTotals>(
+      (total, row) => ({
+        workedSeconds: total.workedSeconds + (row.workedSeconds ?? 0),
+        tier100Seconds: total.tier100Seconds + (row.tier100Seconds ?? 0),
+        tier130Seconds: total.tier130Seconds + (row.tier130Seconds ?? 0),
+        tier150Seconds: total.tier150Seconds + (row.tier150Seconds ?? 0),
+        tier200Seconds: total.tier200Seconds + (row.tier200Seconds ?? 0),
+        tier210Seconds: total.tier210Seconds + (row.tier210Seconds ?? 0),
+        tier230Seconds: total.tier230Seconds + (row.tier230Seconds ?? 0),
+        lateSeconds: total.lateSeconds + (row.lateSeconds ?? 0),
+        earlySeconds: total.earlySeconds + (row.earlySeconds ?? 0),
+        attendanceDays: total.attendanceDays,
+        exceptionCount: total.exceptionCount,
+      }),
+      this.emptyAttendanceDetailTotals(),
+    );
+    totals.attendanceDays = new Set(
+      validRows.flatMap((row) => (row.shiftDate ? [row.shiftDate.toISOString().slice(0, 10)] : [])),
+    ).size;
+    totals.exceptionCount = rows.reduce((sum, row) => sum + row.exceptions.length, 0);
+
+    const adjustments = rawRows
+      .flatMap((raw) =>
+        raw.adjustments.map((adjustment) => ({
+          ...adjustment,
+          rawId: raw.id,
+          rowNo: raw.rowNo,
+        })),
+      )
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+    const engineVersions = [
+      ...new Set(rows.flatMap((row) => (row.engineVersion ? [row.engineVersion] : []))),
+    ].sort();
+
+    return {
+      employee: {
+        ...employee,
+        departmentName: employee.department?.name ?? null,
+        department: undefined,
+      },
+      period,
+      rows,
+      adjustments,
+      totals,
+      workingDays: null,
+      workingDaysAvailable: false,
+      calculationVersion: {
+        engineVersions,
+        maxRevision: rows.reduce<number | null>(
+          (maximum, row) => (maximum === null ? row.revision : Math.max(maximum, row.revision)),
+          null,
+        ),
+      },
+    };
+  }
+
+  async employeeAttendancePdf(user: AuthenticatedUser, employeeId: string, periodId?: string) {
+    const detail = await this.employeeAttendance(user, employeeId, periodId);
+    if (!detail.period) throw new NotFoundException('Không tìm thấy kỳ công.');
+    const require = createRequire(import.meta.url);
+    const packageFile = require.resolve('@fontsource/noto-sans/package.json');
+    const fontFile = join(dirname(packageFile), 'files', 'noto-sans-vietnamese-400-normal.woff');
+    const document = new PDFDocument({
+      size: 'A4',
+      margin: 42,
+      info: { Title: `Chi tiết bảng công ${detail.employee.code}` },
+    });
+    document.registerFont('NotoSans', fontFile);
+    document.font('NotoSans');
+    const chunks: Buffer[] = [];
+    document.on('data', (chunk: Buffer) => chunks.push(chunk));
+    const completed = new Promise<Buffer>((resolveBuffer, reject) => {
+      document.on('end', () => resolveBuffer(Buffer.concat(chunks)));
+      document.on('error', reject);
+    });
+    const duration = (seconds: number | null | undefined) => {
+      if (seconds === null || seconds === undefined) return '—';
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const remaining = seconds % 60;
+      return `${hours}:${String(minutes).padStart(2, '0')}:${String(remaining).padStart(2, '0')}`;
+    };
+    const date = (value: Date | null) =>
+      value
+        ? new Intl.DateTimeFormat('vi-VN', { timeZone: detail.period.timezone }).format(value)
+        : '—';
+    document
+      .fillColor('#DC2626')
+      .fontSize(9)
+      .text('BẢN NHÁP PHÁT TRIỂN – CHƯA PHÊ DUYỆT PHÁT HÀNH', { align: 'center' });
+    document
+      .moveDown()
+      .fillColor('#14213D')
+      .fontSize(18)
+      .text('IN NHẬT HÀN – CHI TIẾT BẢNG CÔNG', { align: 'center' });
+    document.moveDown(1.5).fontSize(10).fillColor('#14213D');
+    document.text(`Nhân viên: ${detail.employee.code} – ${detail.employee.name}`);
+    document.text(`Phòng ban: ${detail.employee.departmentName ?? '—'}`);
+    document.text(`Kỳ công: ${String(detail.period.month).padStart(2, '0')}/${detail.period.year}`);
+    document.text(`Tổng giờ công: ${duration(detail.totals.workedSeconds)}`);
+    document.text(`Số ngày có mặt: ${detail.totals.attendanceDays}`);
+    document.text(`Số ngoại lệ mở: ${detail.totals.exceptionCount}`);
+    document.moveDown().fontSize(8).fillColor('#475569');
+    document.text(
+      'Ngày | Ca | Giờ vào | Giờ ra | Giờ tính công | 100% | 130% | 150% | 200% | 210% | 230%',
+    );
+    document
+      .moveTo(42, document.y + 3)
+      .lineTo(553, document.y + 3)
+      .strokeColor('#CBD5E1')
+      .stroke();
+    document.moveDown(0.7);
+    for (const row of detail.rows) {
+      document.text(
+        `${date(row.shiftDate)} | ${row.shiftCode ?? '—'} | ${row.checkInAt ? row.checkInAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: detail.period.timezone }) : '—'} | ${row.checkOutAt ? row.checkOutAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: detail.period.timezone }) : '—'} | ${duration(row.workedSeconds)} | ${duration(row.tier100Seconds)} | ${duration(row.tier130Seconds)} | ${duration(row.tier150Seconds)} | ${duration(row.tier200Seconds)} | ${duration(row.tier210Seconds)} | ${duration(row.tier230Seconds)}`,
+        { width: 510 },
+      );
+    }
+    document
+      .moveDown()
+      .fillColor('#64748B')
+      .fontSize(8)
+      .text(
+        'Số ngày làm việc không hiển thị vì chưa có lịch/policy ngày làm việc được phê duyệt. PDF dùng mẫu tạm và không được phát hành cho nhân viên thật.',
+      );
+    document.end();
+    return completed;
+  }
+
+  private emptyAttendanceDetailTotals(): AttendanceDetailTotals {
+    return {
+      workedSeconds: 0,
+      tier100Seconds: 0,
+      tier130Seconds: 0,
+      tier150Seconds: 0,
+      tier200Seconds: 0,
+      tier210Seconds: 0,
+      tier230Seconds: 0,
+      lateSeconds: 0,
+      earlySeconds: 0,
+      attendanceDays: 0,
+      exceptionCount: 0,
+    };
   }
 
   private emptyAttendanceTotals(): AttendanceSummaryTotals {
@@ -828,7 +1150,9 @@ export class CoreService {
       tier100Seconds: 0,
       tier130Seconds: 0,
       tier150Seconds: 0,
+      tier200Seconds: 0,
       tier210Seconds: 0,
+      tier230Seconds: 0,
       lateSeconds: 0,
       earlySeconds: 0,
       attendanceDays: 0,
@@ -902,7 +1226,9 @@ export class CoreService {
               tier100Seconds: true,
               tier130Seconds: true,
               tier150Seconds: true,
+              tier200Seconds: true,
               tier210Seconds: true,
+              tier230Seconds: true,
               lateSeconds: true,
               earlySeconds: true,
               raw: { select: { employeeId: true, departmentName: true } },
@@ -943,7 +1269,9 @@ export class CoreService {
       tier100Seconds: number;
       tier130Seconds: number;
       tier150Seconds: number;
+      tier200Seconds: number;
       tier210Seconds: number;
+      tier230Seconds: number;
       lateSeconds: number;
       earlySeconds: number;
       shiftDates: Set<string>;
@@ -961,7 +1289,9 @@ export class CoreService {
           tier100Seconds: 0,
           tier130Seconds: 0,
           tier150Seconds: 0,
+          tier200Seconds: 0,
           tier210Seconds: 0,
+          tier230Seconds: 0,
           lateSeconds: 0,
           earlySeconds: 0,
           shiftDates: new Set<string>(),
@@ -1004,7 +1334,9 @@ export class CoreService {
       accumulator.tier100Seconds += calculation.tier100Seconds ?? 0;
       accumulator.tier130Seconds += calculation.tier130Seconds ?? 0;
       accumulator.tier150Seconds += calculation.tier150Seconds ?? 0;
+      accumulator.tier200Seconds += calculation.tier200Seconds ?? 0;
       accumulator.tier210Seconds += calculation.tier210Seconds ?? 0;
+      accumulator.tier230Seconds += calculation.tier230Seconds ?? 0;
       accumulator.lateSeconds += calculation.lateSeconds ?? 0;
       accumulator.earlySeconds += calculation.earlySeconds ?? 0;
       if (calculation.normalization.shiftDate) {
@@ -1035,7 +1367,9 @@ export class CoreService {
         tier100Seconds: accumulator?.tier100Seconds ?? 0,
         tier130Seconds: accumulator?.tier130Seconds ?? 0,
         tier150Seconds: accumulator?.tier150Seconds ?? 0,
+        tier200Seconds: accumulator?.tier200Seconds ?? 0,
         tier210Seconds: accumulator?.tier210Seconds ?? 0,
+        tier230Seconds: accumulator?.tier230Seconds ?? 0,
         lateSeconds: accumulator?.lateSeconds ?? 0,
         earlySeconds: accumulator?.earlySeconds ?? 0,
         workingDays: null,
@@ -1090,7 +1424,9 @@ export class CoreService {
         tier100Seconds: total.tier100Seconds + row.tier100Seconds,
         tier130Seconds: total.tier130Seconds + row.tier130Seconds,
         tier150Seconds: total.tier150Seconds + row.tier150Seconds,
+        tier200Seconds: total.tier200Seconds + row.tier200Seconds,
         tier210Seconds: total.tier210Seconds + row.tier210Seconds,
+        tier230Seconds: total.tier230Seconds + row.tier230Seconds,
         lateSeconds: total.lateSeconds + row.lateSeconds,
         earlySeconds: total.earlySeconds + row.earlySeconds,
         attendanceDays: total.attendanceDays + row.attendanceDays,
@@ -1233,7 +1569,9 @@ export class CoreService {
       'Giờ 100%',
       'Giờ 130%',
       'Giờ 150%',
+      'Giờ 200%',
       'Giờ 210%',
+      'Giờ 230%',
       'Đi muộn',
       'Về sớm',
       'Số ngày làm việc',
@@ -1248,7 +1586,7 @@ export class CoreService {
     headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1769D2' } };
     headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
     headerRow.height = 32;
-    const durationColumns = [5, 6, 7, 8, 9, 10, 11];
+    const durationColumns = [5, 6, 7, 8, 9, 10, 11, 12, 13];
     allRows.forEach((row, index) => {
       const values: Array<string | number> = [
         index + 1,
@@ -1259,7 +1597,9 @@ export class CoreService {
         row.tier100Seconds / 86_400,
         row.tier130Seconds / 86_400,
         row.tier150Seconds / 86_400,
+        row.tier200Seconds / 86_400,
         row.tier210Seconds / 86_400,
+        row.tier230Seconds / 86_400,
         row.lateSeconds / 86_400,
         row.earlySeconds / 86_400,
         row.workingDays ?? 'N/A',
@@ -1282,7 +1622,9 @@ export class CoreService {
       response.totals.tier100Seconds / 86_400,
       response.totals.tier130Seconds / 86_400,
       response.totals.tier150Seconds / 86_400,
+      response.totals.tier200Seconds / 86_400,
       response.totals.tier210Seconds / 86_400,
+      response.totals.tier230Seconds / 86_400,
       response.totals.lateSeconds / 86_400,
       response.totals.earlySeconds / 86_400,
       'N/A',
@@ -1296,10 +1638,10 @@ export class CoreService {
     durationColumns.forEach((column) => {
       totalRow.getCell(column).numFmt = '[h]:mm:ss';
     });
-    sheet.columns = [8, 14, 28, 24, 15, 15, 15, 15, 15, 14, 14, 18, 16, 14, 20, 18].map(
+    sheet.columns = [8, 14, 28, 24, 15, 15, 15, 15, 15, 15, 15, 14, 14, 18, 16, 14, 20, 18].map(
       (width) => ({ width }),
     );
-    sheet.autoFilter = { from: { row: 8, column: 1 }, to: { row: 8, column: 16 } };
+    sheet.autoFilter = { from: { row: 8, column: 1 }, to: { row: 8, column: 18 } };
     return Buffer.from(await workbook.xlsx.writeBuffer());
   }
 
@@ -1329,7 +1671,9 @@ export class CoreService {
       ['100% (giây)', 'tier100Seconds'],
       ['130% (giây)', 'tier130Seconds'],
       ['150% (giây)', 'tier150Seconds'],
+      ['200% (giây)', 'tier200Seconds'],
       ['210% (giây)', 'tier210Seconds'],
+      ['230% (giây)', 'tier230Seconds'],
       ['Trạng thái', 'status'],
     ];
     sheet.columns = columns.map(([header, key]) => ({ header, key, width: 20 }));
@@ -1348,13 +1692,15 @@ export class CoreService {
         tier100Seconds: item.tier100Seconds,
         tier130Seconds: item.tier130Seconds,
         tier150Seconds: item.tier150Seconds,
+        tier200Seconds: item.tier200Seconds,
         tier210Seconds: item.tier210Seconds,
+        tier230Seconds: item.tier230Seconds,
         status: item.status,
       });
     }
     sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
     sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1769D2' } };
-    sheet.autoFilter = { from: 'A1', to: 'O1' };
+    sheet.autoFilter = { from: 'A1', to: 'Q1' };
     return Buffer.from(await workbook.xlsx.writeBuffer());
   }
 

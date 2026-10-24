@@ -1,29 +1,68 @@
 # Báo cáo kiểm thử
 
-Ngày chạy gần nhất: 23/10/2026, timezone `Asia/Ho_Chi_Minh`. Test tự động dùng dữ liệu **synthetic**. File `SX.xlsx` người dùng upload đã được xử lý trên development để kiểm tra vận hành nhưng không phải oracle độc lập và không thay thế expected của HR/UAT.
+Ngày chạy gần nhất: 24/10/2026, timezone `Asia/Ho_Chi_Minh`. Test tự động dùng dữ liệu **synthetic**. File `SX.xlsx` người dùng upload đã được xử lý trên development để kiểm tra vận hành nhưng không phải oracle độc lập và không thay thế expected của HR/UAT.
 
 ## Kết quả cuối
 
 | Nhóm                                           | Lệnh/bằng chứng                                  | Kết quả                                                                                          |
 | ---------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| Engine unit                                    | `pnpm.cmd test:run`                              | 31/31 PASS, 2 files                                                                              |
-| API unit/service/security/export/import policy | `pnpm.cmd --filter @tinh-cong/api test:run`      | 29/29 PASS, 7 files; thêm revision mới nhất, search không dấu và Excel chống formula injection   |
-| PostgreSQL integration                         | `pnpm.cmd test:integration`                      | 9/9 PASS trên DB mới; thêm API summary/export, RBAC scope và kỳ không tồn tại                    |
-| Browser E2E                                    | `pnpm.cmd test:e2e`                              | 17/17 PASS, Chromium; thêm màn tổng hợp, lọc/URL, export, detail, mobile và visual 1536×1024     |
+| Engine unit                                    | `pnpm.cmd test:run`                              | 38/38 PASS, 2 files; gồm biên ca, khối 30 phút, rule lịch sử và Chủ nhật 200%/230%               |
+| API unit/service/security/export/import policy | `pnpm.cmd --filter @tinh-cong/api test:run`      | 32/32 PASS, 8 files; gồm revision bất biến và guard kỳ LOCKED                                    |
+| PostgreSQL integration                         | `pnpm.cmd test:integration`                      | 13/13 PASS trên DB mới; gồm năm migration, rule v3, Chủ nhật 200%/230% và RBAC/report            |
+| Browser E2E                                    | `pnpm.cmd test:e2e`                              | 20/20 PASS, Chromium; thêm Màn 06, năm tab, PDF, mobile và visual 1536×1024                      |
 | ESLint                                         | `pnpm.cmd lint`                                  | PASS, 0 warning; ESLint flat config kiểm tra TypeScript/React/Node toàn monorepo                 |
 | TypeScript                                     | `pnpm.cmd typecheck`                             | PASS, 5 workspace packages có script                                                             |
 | Production build                               | `pnpm.cmd build`                                 | PASS, API + web + engine + UI + shared                                                           |
-| Prisma                                         | `prisma validate`; `prisma migrate deploy`; seed | PASS, migration `20261021145100_init` và synthetic seed                                          |
+| Prisma                                         | `prisma validate`; `prisma migrate deploy`; seed | PASS, đủ 5 migration đến `20261023183000_sunday_tiers_200_230` và synthetic seed                 |
 | Docker build/runtime                           | Buildx + artifact packaging; health endpoints    | Web UI mới runtime PASS; Dockerfile/API rebuild vẫn NOT_COMPLETED do build daemon treo           |
 | Docker runtime                                 | API direct, Nginx `/healthz`, proxy API và web   | PASS; DB/API/web healthy; API direct/proxy và Nginx HTTP 200; smoke runtime import/template PASS |
 | Backup/restore                                 | `backup.ps1`, `restore.ps1` vào DB tạm           | PASS, SHA-256 tạo được, restore 25 bảng; DB tạm đã xóa                                           |
 | Synthetic scale                                | `pnpm.cmd test:performance`                      | PASS, 1.000 NV: query 43,69 ms; engine 6,15 ms; tổng 175,02 ms                                   |
 
-Tổng test tự động ở lần chạy cuối đạt: **86 PASS** (`31 + 29 + 9 + 17`), **0 FAIL**, **0 SKIP** sau lần chạy lại đầy đủ môi trường. Các kiểm tra build/migration/Docker/backup/performance được ghi riêng, không cộng vào số test case.
+Tổng test tự động ở lần chạy cuối đạt: **103 PASS** (`38 + 32 + 13 + 20`), **0 FAIL**, **0 SKIP**. Các kiểm tra build/migration/Docker/backup/performance được ghi riêng, không cộng vào số test case.
+
+## Mốc DEC-010 – Mức Chủ nhật 200%/230% ngày 24/10/2026
+
+- Chủ nhật được xác định bằng `shiftDate`/ngày bắt đầu ca. Toàn bộ `W` của Ca 1 vào `tier200Seconds`; toàn bộ `W` của Ca 3 vào `tier230Seconds`; năm tier còn lại bằng 0. Ca 3 bắt đầu Chủ nhật và checkout thứ Hai vẫn ở 230%. Giờ nghỉ, biên vào sớm và khối đủ 30 phút tiếp tục theo DEC-008/DEC-009.
+- Migration additive `20261023183000_sunday_tiers_200_230` thêm hai cột nullable để giữ calculation lịch sử và tạo rule version 3 cho cả hai ca từ 01/09/2026. Engine version là `2026-10-23-dec010`; input hash tiếp tục mang rule snapshot để tính lại tạo revision mới thay vì ghi đè.
+- API/dashboard, Bảng công tổng hợp, Chi tiết bảng công, Excel và PDF đều trả/hiển thị hai mức mới. Bảng tổng hợp có 20 cột, chín KPI; chi tiết có 12 KPI. Tổng sáu tier được kiểm tra bằng `W`.
+- Gate cuối: ESLint PASS 0 warning; Prisma validate PASS; typecheck PASS; production build PASS; engine **38/38**, API **32/32**, PostgreSQL integration **13/13**, Playwright Chromium **20/20**; tổng **103 PASS**, 0 FAIL, 0 SKIP.
+- PostgreSQL mới áp đủ năm migration và seed synthetic. Regression DB xác nhận Ca 1 Chủ nhật `06:30–19:30` có 41.400 giây ở 200%, Ca 3 bắt đầu Chủ nhật `18:45–07:30` có 41.400 giây ở 230%, đều chọn rule v3 và giữ nguyên ngày ca. Database tạm của lần PASS đã xóa.
+- Lần integration đầu sau migration/seed chỉ đạt 10/13 vì API dùng engine `dist` cũ từ checkpoint; ba failure cho thấy hai cột còn `null` và chưa áp dụng Chủ nhật. Không ghi lần đó là PASS. Sau khi build lại workspace, chạy lại toàn bộ trên database mới khác đạt 13/13; database tạm đầu cũng đã xóa.
+- Chưa rebuild image Dockerfile, chưa migrate/tính lại development `SX.xlsx` và chưa có expected độc lập của HR/UAT. Runtime DEC-010 và production readiness vẫn PARTIAL/BLOCKED.
+
+## Mốc DEC-009 – Ca 1 07:00–19:00 và khối ngoài giờ ngày 23/10/2026
+
+- Engine giữ nguyên timestamp nguồn nhưng giới hạn phần được tính của Ca 1 từ 07:00; phần vào sớm không được cộng. Phần sau 19:00 chỉ được ghi nhận theo từng khối đủ 1.800 giây, không làm tròn timestamp nguồn. Ca đủ 07:00–19:00 sau nghỉ 12:00–13:00 có 39.600 giây: 28.800 giây 100% và 10.800 giây 150%. Đi muộn tính từ 07:00; về sớm so với 19:00 và độc lập với giờ vào.
+- Migration additive `20261023170000_ca1_0700_overtime_blocks` tạo rule Ca 1 version 2 hiệu lực từ 01/09/2026, không sửa rule/raw/calculation lịch sử. Engine version mới là `2026-10-23-dec009`; pipeline đã có input hash chứa rule snapshot nên lần tính với rule mới sinh revision thay vì ghi đè.
+- Unit regression xác nhận `06:30–19:20` chỉ tính `07:00–19:00`, `06:30–19:30` tính thêm đúng 30 phút, `19:59:59` vẫn chỉ tính đến 19:30; rule lịch sử 08:00–17:00 vẫn chạy được khi truyền cấu hình versioned.
+- Gate nguồn: ESLint PASS 0 warning; Prisma schema validate PASS; typecheck PASS; production build PASS; engine **34/34**, API **32/32**, Playwright Chromium **20/20**.
+- PostgreSQL mới áp đủ bốn migration và seed synthetic PASS. Integration **12/12 PASS** xác nhận chọn Ca 1 rule v2, giữ normalization raw `06:30/19:20` và `06:30/19:30`, nhưng calculation lần lượt ghi nhận 39.600 và 41.400 giây. Dữ liệu 31/08 bị fail-closed 409 và không thể kéo lùi rule trước ngày hiệu lực 01/09. Database tạm đã được xóa và xác nhận không còn tồn tại.
+- Chưa rebuild image runtime, chưa migrate/tính lại development `SX.xlsx` theo DEC-008/DEC-009 và chưa có expected độc lập của HR/UAT; Docker/runtime và production readiness vẫn PARTIAL/BLOCKED.
+
+## Mốc DEC-008 – Ca 3 19:00–07:00 và revision bất biến ngày 23/10/2026
+
+- Engine giữ nguyên timestamp nguồn nhưng giới hạn phần được tính của Ca 3 từ 19:00; phần vào sớm không được cộng. Phần sau 07:00 chỉ được ghi nhận theo từng khối đủ 1.800 giây, không làm tròn timestamp nguồn. Ca đủ 19:00–07:00 sau nghỉ 00:00–01:00 có 39.600 giây: 14.400 giây 100%, 14.400 giây 130% và 10.800 giây 210%. Đi muộn tính từ 19:00; về sớm vẫn so với 07:00 và độc lập với giờ vào.
+- Migration additive `20261023143000_ca3_1900_overtime_blocks` tạo rule Ca 3 version 2 hiệu lực từ 01/09/2026, không sửa raw hoặc calculation cũ. Pipeline đưa rule snapshot vào input hash; khi rule hiệu lực thay đổi, hệ thống tạo normalization/calculation revision mới thay vì ghi đè. Kỳ `LOCKED`/`PUBLISHED` bị chặn trước khi chuẩn bị coverage hoặc tính lại trực tiếp.
+- Gate nguồn: ESLint PASS 0 warning; typecheck PASS; production build PASS; Prisma schema validate PASS; engine **32/32**, API **32/32**, Playwright **20/20**.
+- Migration và seed chạy trên database PostgreSQL mới: đủ ba migration, ba tài khoản synthetic và một rule Ca 3 v2. Integration **10/10 PASS**, gồm ca vào 18:45/ra 07:15 chỉ tính 19:00–07:00, chọn rule v2 và tạo revision 2 khi xuất hiện rule mới cùng hiệu lực. Database tạm đã được xóa và xác nhận không còn tồn tại.
+- Lần wrapper gộp migration/seed/integration không trả kết quả sau khi migration và seed đã hoàn tất nên đã bị dừng; không ghi lần đó là PASS. Suite integration được chạy tách riêng trên chính DB mới và đạt 10/10 trước khi cleanup.
+- Đây là gate source/synthetic. Lần thử `docker compose build api web` cho DEC-008 không phát log/kết quả trong cửa sổ theo dõi; lệnh và đúng tiến trình `docker-buildx` còn sót của workspace đã được dừng. Container DB/API/web hiện hữu vẫn healthy, nhưng không được coi là image source mới. Chưa migrate/tính lại development `SX.xlsx` theo rule mới và chưa có expected độc lập của HR/UAT; Docker/runtime và production readiness vì vậy không được nâng trạng thái.
+
+## Mốc Màn 06 – Chi tiết bảng công ngày 23/10/2026
+
+- `GET /attendance/employee/:id` nay trả contract chi tiết theo nhân viên + kỳ: hồ sơ, period, revision mới nhất của từng raw, normalization/tier/L-E, ngoại lệ mở, đúng bảy trường nguồn và lịch sử điều chỉnh. Data scope được kiểm tra trước truy vấn; EMPLOYEE chỉ đọc chính mình, HR/MANAGER vẫn fail-closed nếu không có scope.
+- Aggregate chi tiết chỉ cộng calculation `VALID`; dòng chưa tính/cần review vẫn hiển thị để HR kiểm tra. `workingDays=null`, UI `N/A`; hệ thống không tạo ngày nghỉ từ khoảng trống dữ liệu. Không thêm endpoint sửa/duyệt/chốt khi Q10/Q11 còn OPEN.
+- `GET /attendance/employee/:id/pdf` dùng cùng contract/scope, có font tiếng Việt và đóng dấu `BẢN NHÁP PHÁT TRIỂN – CHƯA PHÊ DUYỆT PHÁT HÀNH`; không thay thế mẫu PDF chính thức.
+- UI 1536×1024 có hồ sơ, 12 KPI, tháng trước/sau, bảng chi tiết + tổng, tab Tổng hợp/Biểu đồ/Dữ liệu nguồn/Lịch sử điều chỉnh, sidebar tóm tắt, phân trang và cuộn ngang mobile. Visual evidence synthetic: `docs/ui-evidence/attendance-detail-after.png`; target: `docs/ui-reference/attendance-detail-target.png`. Chỉ đối chiếu thủ công, chưa có image-diff threshold/UAT nên không tuyên bố pixel-perfect 100%.
+- Unit/service mới 2/2 và bộ API đầy đủ **31/31 PASS**; engine **31/31 PASS**. PostgreSQL integration cuối **9/9 PASS** trên DB mới sau hai migration + synthetic seed; Playwright cuối **20/20 PASS**.
+- Lần integration đầu của mốc không chạy test vì lệnh PowerShell ghép `$dbName?schema` thành URL sai, migration fail và DB tạm được xóa. Lần hai chạy thật đạt 8/9; lỗi là assertion yêu cầu nested `source` bằng tuyệt đối trong khi API trả đúng đủ bảy field. Sửa assertion partial-match, lần ba trên DB mới khác đạt 9/9; DB tạm được xóa trong mọi lần.
+- Playwright đầu đạt 19/20 vì test tìm `columnheader` trong snapshot nơi browser biểu diễn header là `cell`; UI đã chuyển tab đúng. Sửa selector test theo `thead`, chạy lại 20/20. Không thay logic/validation để né lỗi.
+- Runtime local được cập nhật bằng artifact đã kiểm thử, không reset DB. DB/API/web healthy; health API trực tiếp/proxy/Nginx đều HTTP 200. Smoke có xác thực qua `8180` xác nhận PDF 200 và chi tiết kỳ 09/2026 có 31 dòng/25 ngày có mặt cho một nhân viên đã tính, không trùng `rawId`; `workingDaysAvailable=false` đúng fail-closed. Đây là development smoke, không thay UAT/dữ liệu expected của HR.
 
 ## Mốc Màn 05 – Bảng công tổng hợp ngày 23/10/2026
 
-- Thay trang JSON `/attendance` bằng UI tổng hợp thật: chọn kỳ/phòng ban/trạng thái kỳ, bảy KPI, tìm kiếm, lọc ca/trạng thái xử lý, sort và phân trang server-side 10/20/50/100, bảng 18 cột, chọn dòng, tổng cộng toàn bộ tập lọc và điều hướng chi tiết bằng `employeeId + periodId`.
+- Thay trang JSON `/attendance` bằng UI tổng hợp thật: chọn kỳ/phòng ban/trạng thái kỳ, chín KPI, tìm kiếm, lọc ca/trạng thái xử lý, sort và phân trang server-side 10/20/50/100, bảng 20 cột, chọn dòng, tổng cộng toàn bộ tập lọc và điều hướng chi tiết bằng `employeeId + periodId`.
 - API `GET /attendance/summary` áp RBAC/data scope backend. Mỗi raw chỉ lấy revision calculation mới nhất; chỉ calculation `VALID` được cộng thời gian. `NEEDS_REVIEW` được tách khỏi trạng thái kỳ; phòng ban trong kỳ ưu tiên snapshot raw. `Số ngày làm việc` trả `null`/UI `N/A` vì chưa có lịch/policy được duyệt, không tự suy diễn.
 - `GET /attendance/export` xuất toàn bộ tập lọc thay vì chỉ trang hiện tại, có công ty/tiêu đề/kỳ/bộ lọc/timestamp/phiên bản engine-revision/dòng tổng, định dạng `[h]:mm:ss`, nhãn `DỮ LIỆU TẠM, CHƯA CHỐT` cho kỳ chưa khóa/phát hành và chống formula injection.
 - Unit regression mới đạt 3/3: bỏ revision cũ khỏi aggregate, giữ phòng ban trong kỳ, tách trạng thái xử lý, tìm tên không dấu và kiểm tra workbook/formula injection. Bộ API đầy đủ đạt 29/29; engine giữ 31/31.

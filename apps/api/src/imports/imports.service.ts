@@ -9,7 +9,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { calculateAttendance } from '@tinh-cong/attendance-engine';
+import { calculateAttendance, type EngineShiftRule } from '@tinh-cong/attendance-engine';
 import { CalculationStatus, Prisma } from '../generated/prisma/index.js';
 import type { AuthenticatedUser } from '../auth/types.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -43,6 +43,7 @@ const SHIFT_DEFINITIONS: Record<
   SupportedShiftCode,
   {
     name: string;
+    effectiveFrom: string;
     scheduledStartSeconds: number;
     scheduledCompletionSeconds: number;
     breakStartSeconds: number;
@@ -53,21 +54,38 @@ const SHIFT_DEFINITIONS: Record<
 > = {
   CA1: {
     name: 'Ca 1',
-    scheduledStartSeconds: 28_800,
-    scheduledCompletionSeconds: 61_200,
+    effectiveFrom: '2026-09-01',
+    scheduledStartSeconds: 25_200,
+    scheduledCompletionSeconds: 68_400,
     breakStartSeconds: 43_200,
     breakEndSeconds: 46_800,
     abnormalDurationThresholdSeconds: 57_600,
-    tiers: { tier100: 28_800, tier150After: 28_800 },
+    tiers: {
+      tier100: 28_800,
+      tier150After: 28_800,
+      targetWorkedSeconds: 39_600,
+      countEarlyArrivalSeconds: false,
+      postCompletionBlockSeconds: 1_800,
+      sundayTierPercentage: 200,
+    },
   },
   CA3: {
     name: 'Ca 3',
-    scheduledStartSeconds: 79_200,
+    effectiveFrom: '2026-09-01',
+    scheduledStartSeconds: 68_400,
     scheduledCompletionSeconds: 111_600,
     breakStartSeconds: 86_400,
     breakEndSeconds: 90_000,
     abnormalDurationThresholdSeconds: 57_600,
-    tiers: { tier100: 14_400, tier130: 14_400, tier210After: 28_800 },
+    tiers: {
+      tier100: 14_400,
+      tier130: 14_400,
+      tier210After: 28_800,
+      targetWorkedSeconds: 39_600,
+      countEarlyArrivalSeconds: false,
+      postCompletionBlockSeconds: 1_800,
+      sundayTierPercentage: 230,
+    },
   },
 };
 
@@ -765,6 +783,17 @@ export class ImportsService {
     const periodByKey = new Map(
       periods.map((period) => [`${period.year}-${period.month}`, period]),
     );
+    const immutablePeriod = rows
+      .filter((raw) => this.isIsoDate(raw.attendanceDateRaw))
+      .map((raw) => raw.attendanceDateRaw!.slice(0, 7))
+      .map((key) => periodByKey.get(`${Number(key.slice(0, 4))}-${Number(key.slice(5, 7))}`))
+      .find((period) => period?.status === 'LOCKED' || period?.status === 'PUBLISHED');
+    if (immutablePeriod) {
+      throw new ConflictException({
+        code: 'ATTENDANCE_PERIOD_IMMUTABLE',
+        message: `Kỳ ${immutablePeriod.month}/${immutablePeriod.year} đã ${immutablePeriod.status}; không được tính lại trực tiếp.`,
+      });
+    }
     const rowsPerEmployeeDate = new Map<string, number>();
     for (const raw of rows) {
       if (!this.isIsoDate(raw.attendanceDateRaw)) continue;
@@ -826,6 +855,7 @@ export class ImportsService {
             !candidate.effectiveTo ||
             candidate.effectiveTo >= new Date(`${shiftDate}T00:00:00.000Z`),
         )
+        .filter((candidate) => this.ruleMatchesApprovedDefinition(candidate, sourceShiftCode))
         .sort((a, b) => b.version - a.version)[0];
       const [year, month] = shiftDate.split('-').map(Number);
       const period = periodByKey.get(`${year}-${month}`);
@@ -855,14 +885,41 @@ export class ImportsService {
         {
           timezone: 'Asia/Ho_Chi_Minh',
           abnormalDurationThresholdSeconds: rule.abnormalDurationThresholdSeconds,
+          shiftRule: this.engineShiftRule(rule),
         },
       );
-      const normalization = await this.prisma.attendanceNormalization.upsert({
-        where: { rawId_revision: { rawId: raw.id, revision: 1 } },
-        update: {},
-        create: {
+      const inputHash = createHash('sha256')
+        .update(
+          JSON.stringify({
+            rawId: raw.id,
+            shiftDate,
+            checkIn: timestamps.checkInAt,
+            checkOut: timestamps.checkOutAt,
+            shift: sourceShiftCode,
+            shiftRuleId: rule.id,
+            rule: rule.version,
+            engineVersion: result.ruleVersion,
+            shiftRule: this.engineShiftRule(rule),
+          }),
+        )
+        .digest('hex');
+      const latestCalculation = await this.prisma.attendanceCalculation.findFirst({
+        where: { rawId: raw.id },
+        orderBy: { revision: 'desc' },
+        select: { revision: true, inputHash: true },
+      });
+      if (latestCalculation?.inputHash === inputHash) {
+        calculatedRows++;
+        continue;
+      }
+      const revision = (latestCalculation?.revision ?? 0) + 1;
+      const normalizationId = randomUUID();
+      const calculationId = randomUUID();
+      const normalizationCreate = this.prisma.attendanceNormalization.create({
+        data: {
+          id: normalizationId,
           rawId: raw.id,
-          revision: 1,
+          revision,
           shiftDate: new Date(`${shiftDate}T00:00:00.000Z`),
           checkInAt:
             result.checkInEpochSeconds === null
@@ -881,41 +938,29 @@ export class ImportsService {
           ruleVersion: `engine-${result.ruleVersion}`,
         },
       });
-      const inputHash = createHash('sha256')
-        .update(
-          JSON.stringify({
-            rawId: raw.id,
-            shiftDate,
-            checkIn: timestamps.checkInAt,
-            checkOut: timestamps.checkOutAt,
-            shift: sourceShiftCode,
-            rule: rule.version,
-          }),
-        )
-        .digest('hex');
-      const calculation = await this.prisma.attendanceCalculation.upsert({
-        where: { rawId_revision: { rawId: raw.id, revision: 1 } },
-        update: {},
-        create: {
+      const calculationCreate = this.prisma.attendanceCalculation.create({
+        data: {
+          id: calculationId,
           rawId: raw.id,
-          normalizationId: normalization.id,
+          normalizationId,
           periodId: period.id,
           shiftRuleId: rule.id,
           engineVersion: result.ruleVersion,
-          revision: 1,
+          revision,
           inputHash,
           status:
             result.status === 'VALID' ? CalculationStatus.VALID : CalculationStatus.NEEDS_REVIEW,
           ...(result.calculation ?? {}),
         },
       });
+      await this.prisma.$transaction([normalizationCreate, calculationCreate]);
       for (const exception of result.exceptions) {
         const key = `raw:${raw.id}:${exception.code}`;
         if (existingKeys.has(key)) continue;
         await this.prisma.attendanceException.create({
           data: {
             rawId: raw.id,
-            calculationId: calculation.id,
+            calculationId,
             code: exception.code,
             blocking: exception.blocking,
             details: { message: exception.message },
@@ -927,6 +972,50 @@ export class ImportsService {
     }
     await this.resolveRecoveredExceptions(actorId, recovered);
     return { missingSchedules: 0, missingTimestampEvidence, calculatedRows };
+  }
+
+  private engineShiftRule(rule: ShiftWithRules['rules'][number]): EngineShiftRule {
+    const tiers = rule.tiers as Record<string, unknown>;
+    const scheduledNetSeconds =
+      rule.scheduledCompletionSeconds -
+      rule.scheduledStartSeconds -
+      Math.max(rule.breakEndSeconds - rule.breakStartSeconds, 0);
+    return {
+      scheduledStartSeconds: rule.scheduledStartSeconds,
+      scheduledCompletionSeconds: rule.scheduledCompletionSeconds,
+      breakStartSeconds: rule.breakStartSeconds,
+      breakEndSeconds: rule.breakEndSeconds,
+      targetWorkedSeconds:
+        typeof tiers.targetWorkedSeconds === 'number'
+          ? tiers.targetWorkedSeconds
+          : scheduledNetSeconds,
+      countEarlyArrivalSeconds:
+        typeof tiers.countEarlyArrivalSeconds === 'boolean' ? tiers.countEarlyArrivalSeconds : true,
+      postCompletionBlockSeconds:
+        typeof tiers.postCompletionBlockSeconds === 'number'
+          ? tiers.postCompletionBlockSeconds
+          : null,
+      sundayTierPercentage:
+        tiers.sundayTierPercentage === 200 || tiers.sundayTierPercentage === 230
+          ? tiers.sundayTierPercentage
+          : null,
+    };
+  }
+
+  private ruleMatchesApprovedDefinition(
+    rule: ShiftWithRules['rules'][number],
+    shiftCode: SupportedShiftCode,
+  ) {
+    const definition = SHIFT_DEFINITIONS[shiftCode];
+    const tiers = rule.tiers as Record<string, unknown>;
+    return (
+      rule.scheduledStartSeconds === definition.scheduledStartSeconds &&
+      rule.scheduledCompletionSeconds === definition.scheduledCompletionSeconds &&
+      rule.breakStartSeconds === definition.breakStartSeconds &&
+      rule.breakEndSeconds === definition.breakEndSeconds &&
+      rule.abnormalDurationThresholdSeconds === definition.abnormalDurationThresholdSeconds &&
+      Object.entries(definition.tiers).every(([key, value]) => tiers[key] === value)
+    );
   }
 
   private async ensureCalculationCoverage(
@@ -947,6 +1036,21 @@ export class ImportsService {
     const periodKeys = [
       ...new Set([...datesByShift.values()].flat().map((date) => date.slice(0, 7))),
     ].sort();
+    const immutablePeriod = await this.prisma.attendancePeriod.findFirst({
+      where: {
+        status: { in: ['LOCKED', 'PUBLISHED'] },
+        OR: periodKeys.map((key) => ({
+          year: Number(key.slice(0, 4)),
+          month: Number(key.slice(5, 7)),
+        })),
+      },
+    });
+    if (immutablePeriod) {
+      throw new ConflictException({
+        code: 'ATTENDANCE_PERIOD_IMMUTABLE',
+        message: `Kỳ ${immutablePeriod.month}/${immutablePeriod.year} đã ${immutablePeriod.status}; không được chuẩn bị hoặc tính lại trực tiếp.`,
+      });
+    }
     await this.prisma.$transaction(
       async (tx) => {
         const shifts = await tx.shift.findMany({
@@ -1010,26 +1114,23 @@ export class ImportsService {
     sourceFrom: string,
     sourceTo: string,
   ) {
-    const definition = SHIFT_DEFINITIONS[shiftCode];
     const from = new Date(`${sourceFrom}T00:00:00.000Z`);
     const to = new Date(`${sourceTo}T00:00:00.000Z`);
+    const approvedEffectiveFrom = new Date(
+      `${SHIFT_DEFINITIONS[shiftCode].effectiveFrom}T00:00:00.000Z`,
+    );
+    if (from < approvedEffectiveFrom) {
+      throw new ConflictException({
+        code: 'APPROVED_SHIFT_RULE_NOT_AVAILABLE',
+        message: `Quy tắc ${shiftCode} hiện hành chỉ được phê duyệt từ ${SHIFT_DEFINITIONS[shiftCode].effectiveFrom}; không tự áp dụng lùi cho dữ liệu ${sourceFrom}.`,
+      });
+    }
     const rules = await tx.shiftRule.findMany({ where: { shiftId }, orderBy: { version: 'asc' } });
-    const matchesDefinition = (rule: (typeof rules)[number]) => {
-      const tiers = rule.tiers as Record<string, unknown>;
-      return (
-        rule.scheduledStartSeconds === definition.scheduledStartSeconds &&
-        rule.scheduledCompletionSeconds === definition.scheduledCompletionSeconds &&
-        rule.breakStartSeconds === definition.breakStartSeconds &&
-        rule.breakEndSeconds === definition.breakEndSeconds &&
-        rule.abnormalDurationThresholdSeconds === definition.abnormalDurationThresholdSeconds &&
-        Object.entries(definition.tiers).every(([key, value]) => tiers[key] === value)
-      );
-    };
     const coveringRule = rules.find(
       (rule) =>
         rule.effectiveFrom <= from &&
         (!rule.effectiveTo || rule.effectiveTo >= to) &&
-        matchesDefinition(rule),
+        this.ruleMatchesApprovedDefinition(rule, shiftCode),
     );
     if (coveringRule) return 'UNCHANGED' as const;
 
@@ -1037,7 +1138,7 @@ export class ImportsService {
       (rule) =>
         rule.effectiveFrom > from &&
         (!rule.effectiveTo || rule.effectiveTo >= to) &&
-        matchesDefinition(rule),
+        this.ruleMatchesApprovedDefinition(rule, shiftCode),
     );
     if (!extendableRule) {
       throw new ConflictException({

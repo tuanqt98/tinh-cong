@@ -52,6 +52,18 @@ export interface AttendanceInput {
 export interface EngineConfig {
   abnormalDurationThresholdSeconds: number;
   timezone: 'Asia/Ho_Chi_Minh';
+  shiftRule?: EngineShiftRule;
+}
+
+export interface EngineShiftRule {
+  scheduledStartSeconds: number;
+  scheduledCompletionSeconds: number;
+  breakStartSeconds: number;
+  breakEndSeconds: number;
+  targetWorkedSeconds: number;
+  countEarlyArrivalSeconds: boolean;
+  postCompletionBlockSeconds: number | null;
+  sundayTierPercentage: 200 | 230 | null;
 }
 
 export interface AttendanceCalculation {
@@ -63,7 +75,9 @@ export interface AttendanceCalculation {
   tier100Seconds: number;
   tier130Seconds: number;
   tier150Seconds: number;
+  tier200Seconds: number;
   tier210Seconds: number;
+  tier230Seconds: number;
 }
 
 export interface AttendanceResult {
@@ -74,7 +88,7 @@ export interface AttendanceResult {
   checkOutEpochSeconds: number | null;
   exceptions: AttendanceException[];
   calculation: AttendanceCalculation | null;
-  ruleVersion: '2026-10-09';
+  ruleVersion: '2026-10-23-dec010';
 }
 
 export interface DuplicateCandidate {

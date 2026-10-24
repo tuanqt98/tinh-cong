@@ -10,21 +10,22 @@ Phạm vi chỉ gồm tài liệu/readiness. Không có engine/backend/frontend 
 
 ## Kết quả đối chiếu quyết định
 
-| ID | Q | Kết luận | Đã phản ánh vào thiết kế | Phần còn OPEN |
-|---|---|---|---|---|
-| DEC-001 | Q03 | `CONFIRMED` | ngày ca lấy theo lịch; tách shift date/check-in/check-out; thiếu căn cứ → review | nguồn lịch, tiêu chí mapping tin cậy |
-| DEC-002 | Q04 | `PARTIALLY_CONFIRMED` | có thể D+1 khi hợp lịch 22:00–07:00; lưu evidence; không +1 vô điều kiện | tiêu chí suy ngày, ưu tiên evidence, ca ngắn/mâu thuẫn |
-| DEC-003 | Q05 | `PARTIALLY_CONFIRMED; KEY CONFIRMED` | khóa `employeeCode,attendanceDate,shiftName`; reject toàn import có duplicate; không merge/overwrite/replace; audit hai loại trùng | quy trình file sửa, file nhiều kỳ |
-| DEC-004 | Q06 | `CONFIRMED` | giữ từng raw, nhóm theo NV/shift date, không cộng/ghép/tổng hợp | thao tác HR sau xác nhận nhiều lượt |
-| DEC-005 | Q08 | `CONFIRMED` | A=B, âm có căn cứ, >16h cấu hình → review; không tự sửa | quản trị cấu hình, taxonomy chi tiết |
-| DEC-006 | Q12 | `CONFIRMED` | lưu nhiều lỗi; lỗi chặn ngăn chốt; resolution cần revalidation | danh mục blocking, quyền/thứ tự hiển thị |
+| ID      | Q   | Kết luận                             | Đã phản ánh vào thiết kế                                                                                                                       | Phần còn OPEN                                          |
+| ------- | --- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| DEC-001 | Q03 | `CONFIRMED`                          | ngày ca lấy theo lịch; tách shift date/check-in/check-out; thiếu căn cứ → review                                                               | nguồn lịch, tiêu chí mapping tin cậy                   |
+| DEC-002 | Q04 | `PARTIALLY_CONFIRMED`                | có thể D+1 khi hợp phân ca nguồn; lưu evidence; không +1 vô điều kiện. Khung 22:00–07:00 trong audit gốc đã được DEC-008 thay bằng 19:00–07:00 | tiêu chí suy ngày, ưu tiên evidence, ca ngắn/mâu thuẫn |
+| DEC-003 | Q05 | `PARTIALLY_CONFIRMED; KEY CONFIRMED` | khóa `employeeCode,attendanceDate,shiftName`; reject toàn import có duplicate; không merge/overwrite/replace; audit hai loại trùng             | quy trình file sửa, file nhiều kỳ                      |
+| DEC-004 | Q06 | `CONFIRMED`                          | giữ từng raw, nhóm theo NV/shift date, không cộng/ghép/tổng hợp                                                                                | thao tác HR sau xác nhận nhiều lượt                    |
+| DEC-005 | Q08 | `CONFIRMED`                          | A=B, âm có căn cứ, >16h cấu hình → review; không tự sửa                                                                                        | quản trị cấu hình, taxonomy chi tiết                   |
+| DEC-006 | Q12 | `CONFIRMED`                          | lưu nhiều lỗi; lỗi chặn ngăn chốt; resolution cần revalidation                                                                                 | danh mục blocking, quyền/thứ tự hiển thị               |
 
 Không quyết định nào bị diễn giải thành quyền tự suy quy tắc còn thiếu.
 
 ## Rà soát công thức đã xác nhận
 
-- Ca 1: bắt đầu 08:00; nghỉ 12:00–13:00; 8 giờ đầu 100%; sau 8 giờ 150%; đủ 8 giờ lúc 17:00.
-- Ca 3: bắt đầu 22:00; nghỉ 00:00–01:00; 4 giờ đầu 100%; 4 giờ tiếp 130%; sau 8 giờ 210%; đủ 8 giờ lúc 07:00 hôm sau.
+- Ca 1 tại thời điểm tái audit: bắt đầu 08:00, đủ 8 giờ lúc 17:00. Nội dung này là bằng chứng lịch sử và đã được DEC-009 ngày 23/10/2026 thay bằng 07:00–19:00, nghỉ 12:00–13:00, 8 giờ đầu 100%, sau 8 giờ 150%.
+- Ca 3 tại thời điểm tái audit: bắt đầu 22:00. Nội dung này là bằng chứng lịch sử và đã được DEC-008 ngày 23/10/2026 thay bằng 19:00–07:00, nghỉ 00:00–01:00, 4 giờ đầu 100%, 4 giờ tiếp 130%, sau 8 giờ 210%.
+- Phân bổ ngày thường nêu trên đã được DEC-010 ngày 23/10/2026 bổ sung ngoại lệ Chủ nhật theo ngày bắt đầu ca: toàn bộ Ca 1 ở mức 200%, toàn bộ Ca 3 ở mức 230%; các tier khác bằng 0.
 - Đi muộn/về sớm độc lập; thời gian công dựa trên vào/ra thực tế và chỉ trừ phần giao giờ nghỉ.
 - Nội bộ số nguyên giây; không làm tròn, không nhân hệ số vào duration.
 
@@ -51,7 +52,7 @@ Các mục này không ngăn xây engine công thức độc lập với fixture
 
 1. Thiếu SX.xlsx và quyền/phạm vi xử lý.
 2. Thiếu lịch/mapping tương ứng.
-3. Thiếu expected độc lập do HR duyệt cho T01–T35/dòng mẫu thực.
+3. Thiếu expected độc lập do HR duyệt cho T01–T37/dòng mẫu thực.
 4. Chưa xác nhận có/không code Phase 1 ở nguồn khác.
 
 ### Có thể hoãn Phase sau

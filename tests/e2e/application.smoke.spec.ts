@@ -42,7 +42,14 @@ test.beforeEach(async ({ page }) => {
           pendingPeriods: 0,
           publishedTimesheets: 0,
           openFeedback: 0,
-          tierSeconds: { tier100: 28_800, tier130: 0, tier150: 0, tier210: 0 },
+          tierSeconds: {
+            tier100: 28_800,
+            tier130: 0,
+            tier150: 0,
+            tier200: 0,
+            tier210: 0,
+            tier230: 0,
+          },
         }),
       });
       return;
@@ -110,7 +117,9 @@ test.beforeEach(async ({ page }) => {
             tier100Seconds: 0,
             tier130Seconds: 0,
             tier150Seconds: 0,
+            tier200Seconds: 0,
             tier210Seconds: 0,
+            tier230Seconds: 0,
             lateSeconds: 0,
             earlySeconds: 0,
             attendanceDays: 0,

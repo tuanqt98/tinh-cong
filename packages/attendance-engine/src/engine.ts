@@ -14,14 +14,33 @@ function exception(code: ExceptionCode, message: string): AttendanceException {
   return { code, blocking: true, message };
 }
 
-function allocateTiers(shiftCode: ShiftCode, workedSeconds: number) {
+function allocateTiers(
+  shiftCode: ShiftCode,
+  shiftDate: string,
+  workedSeconds: number,
+  sundayTierPercentage: 200 | 230 | null,
+) {
+  const isSunday = new Date(`${shiftDate}T00:00:00.000Z`).getUTCDay() === 0;
+  if (isSunday && sundayTierPercentage) {
+    return {
+      tier100Seconds: 0,
+      tier130Seconds: 0,
+      tier150Seconds: 0,
+      tier200Seconds: sundayTierPercentage === 200 ? workedSeconds : 0,
+      tier210Seconds: 0,
+      tier230Seconds: sundayTierPercentage === 230 ? workedSeconds : 0,
+    };
+  }
+
   if (shiftCode === 'CA1') {
     const tier100Seconds = Math.min(workedSeconds, 8 * 60 * 60);
     return {
       tier100Seconds,
       tier130Seconds: 0,
       tier150Seconds: Math.max(workedSeconds - 8 * 60 * 60, 0),
+      tier200Seconds: 0,
       tier210Seconds: 0,
+      tier230Seconds: 0,
     };
   }
 
@@ -31,7 +50,9 @@ function allocateTiers(shiftCode: ShiftCode, workedSeconds: number) {
     tier100Seconds,
     tier130Seconds,
     tier150Seconds: 0,
+    tier200Seconds: 0,
     tier210Seconds: Math.max(workedSeconds - 8 * 60 * 60, 0),
+    tier230Seconds: 0,
   };
 }
 
@@ -112,11 +133,9 @@ export function calculateAttendance(
     checkInEpochSeconds !== null &&
     checkOutEpochSeconds !== null
   ) {
-    const timeline = buildShiftTimeline(shiftCode, shiftDate);
+    const timeline = buildShiftTimeline(shiftCode, shiftDate, config.shiftRule);
     if (checkOutEpochSeconds < timeline.scheduledStart) {
-      exceptions.push(
-        exception('CHECKOUT_BEFORE_SHIFT_START', 'Giờ ra nằm trước mốc bắt đầu ca.'),
-      );
+      exceptions.push(exception('CHECKOUT_BEFORE_SHIFT_START', 'Giờ ra nằm trước mốc bắt đầu ca.'));
     }
   }
 
@@ -129,7 +148,7 @@ export function calculateAttendance(
       checkOutEpochSeconds,
       exceptions,
       calculation: null,
-      ruleVersion: '2026-10-09',
+      ruleVersion: '2026-10-23-dec010',
     };
   }
 
@@ -138,11 +157,22 @@ export function calculateAttendance(
   const safeShiftDate = shiftDate as string;
   const safeCheckIn = checkInEpochSeconds as number;
   const safeCheckOut = checkOutEpochSeconds as number;
-  const timeline = buildShiftTimeline(safeShiftCode, safeShiftDate);
-  const presenceSeconds = safeCheckOut - safeCheckIn;
+  const timeline = buildShiftTimeline(safeShiftCode, safeShiftDate, config.shiftRule);
+  const creditedCheckIn = timeline.countEarlyArrivalSeconds
+    ? safeCheckIn
+    : Math.max(safeCheckIn, timeline.scheduledStart);
+  const creditedCheckOut =
+    timeline.postCompletionBlockSeconds && safeCheckOut > timeline.scheduledCompletion
+      ? timeline.scheduledCompletion +
+        Math.floor(
+          (safeCheckOut - timeline.scheduledCompletion) / timeline.postCompletionBlockSeconds,
+        ) *
+          timeline.postCompletionBlockSeconds
+      : safeCheckOut;
+  const presenceSeconds = Math.max(creditedCheckOut - creditedCheckIn, 0);
   const breakSeconds = overlapSeconds(
-    safeCheckIn,
-    safeCheckOut,
+    creditedCheckIn,
+    creditedCheckOut,
     timeline.breakStart,
     timeline.breakEnd,
   );
@@ -151,14 +181,14 @@ export function calculateAttendance(
   const scheduledWindowSeconds =
     safeCheckOut -
     timeline.scheduledStart -
-    overlapSeconds(
-      timeline.scheduledStart,
-      safeCheckOut,
-      timeline.breakStart,
-      timeline.breakEnd,
-    );
+    overlapSeconds(timeline.scheduledStart, safeCheckOut, timeline.breakStart, timeline.breakEnd);
   const earlySeconds = Math.max(timeline.targetWorkedSeconds - scheduledWindowSeconds, 0);
-  const tiers = allocateTiers(safeShiftCode, workedSeconds);
+  const tiers = allocateTiers(
+    safeShiftCode,
+    safeShiftDate,
+    workedSeconds,
+    timeline.sundayTierPercentage,
+  );
   const calculation: AttendanceCalculation = {
     presenceSeconds,
     breakSeconds,
@@ -176,6 +206,6 @@ export function calculateAttendance(
     checkOutEpochSeconds: safeCheckOut,
     exceptions: [],
     calculation,
-    ruleVersion: '2026-10-09',
+    ruleVersion: '2026-10-23-dec010',
   };
 }

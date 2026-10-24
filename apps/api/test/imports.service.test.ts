@@ -227,8 +227,8 @@ describe('ImportsService duplicate key policy', () => {
   });
 
   it('tính trực tiếp từ Tên ca trong file mà không đọc lịch phân ca', async () => {
-    const normalizationUpsert = vi.fn().mockResolvedValue({ id: 'normalization-1' });
-    const calculationUpsert = vi.fn().mockResolvedValue({ id: 'calculation-1' });
+    const normalizationCreate = vi.fn().mockResolvedValue({ id: 'normalization-1' });
+    const calculationCreate = vi.fn().mockResolvedValue({ id: 'calculation-1' });
     const prisma = {
       shift: {
         findMany: vi.fn().mockResolvedValue([
@@ -238,27 +238,44 @@ describe('ImportsService duplicate key policy', () => {
             active: true,
             rules: [
               {
-                id: 'rule-ca1-v1',
-                version: 1,
+                id: 'rule-ca1-v3',
+                version: 3,
                 effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
                 effectiveTo: null,
+                scheduledStartSeconds: 25_200,
+                scheduledCompletionSeconds: 68_400,
+                breakStartSeconds: 43_200,
+                breakEndSeconds: 46_800,
                 abnormalDurationThresholdSeconds: 57_600,
+                tiers: {
+                  tier100: 28_800,
+                  tier150After: 28_800,
+                  targetWorkedSeconds: 39_600,
+                  countEarlyArrivalSeconds: false,
+                  postCompletionBlockSeconds: 1_800,
+                  sundayTierPercentage: 200,
+                },
               },
             ],
           },
         ]),
       },
       attendancePeriod: {
-        findMany: vi.fn().mockResolvedValue([{ id: 'period-2026-09', year: 2026, month: 9 }]),
+        findMany: vi
+          .fn()
+          .mockResolvedValue([{ id: 'period-2026-09', year: 2026, month: 9, status: 'DRAFT' }]),
       },
-      attendanceNormalization: { upsert: normalizationUpsert },
-      attendanceCalculation: { upsert: calculationUpsert },
+      attendanceNormalization: { create: normalizationCreate },
+      attendanceCalculation: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: calculationCreate,
+      },
       attendanceException: {
         create: vi.fn(),
         findMany: vi.fn().mockResolvedValue([]),
       },
       exceptionResolution: { createMany: vi.fn() },
-      $transaction: vi.fn(),
+      $transaction: vi.fn(async (operations: Promise<unknown>[]) => Promise.all(operations)),
     };
     const service = new ImportsService(
       prisma as never,
@@ -305,9 +322,9 @@ describe('ImportsService duplicate key policy', () => {
       missingTimestampEvidence: 0,
       calculatedRows: 1,
     });
-    expect(normalizationUpsert).toHaveBeenCalledWith(
+    expect(normalizationCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        create: expect.objectContaining({
+        data: expect.objectContaining({
           shiftCode: 'CA1',
           shiftDateEvidence: expect.objectContaining({
             type: 'APPROVED_MAPPING',
@@ -316,7 +333,7 @@ describe('ImportsService duplicate key policy', () => {
         }),
       }),
     );
-    expect(calculationUpsert).toHaveBeenCalledOnce();
+    expect(calculationCreate).toHaveBeenCalledOnce();
   });
 
   it('không suy timestamp khi Tên ca nguồn không khớp ca đang xử lý', () => {
@@ -336,6 +353,43 @@ describe('ImportsService duplicate key policy', () => {
     );
 
     expect(normalized).toBeNull();
+  });
+
+  it('chặn tính lại trực tiếp khi kỳ đã LOCKED', async () => {
+    const prisma = {
+      shift: { findMany: vi.fn().mockResolvedValue([]) },
+      attendancePeriod: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([{ id: 'period-2026-09', year: 2026, month: 9, status: 'LOCKED' }]),
+      },
+    };
+    const service = new ImportsService(prisma as never, {} as never, {} as never);
+    const processLinkedRows = (
+      service as unknown as {
+        processLinkedRows: (
+          rows: never[],
+          existingKeys: Set<string>,
+          actorId: string,
+        ) => Promise<unknown>;
+      }
+    ).processLinkedRows.bind(service);
+
+    await expect(
+      processLinkedRows(
+        [
+          {
+            id: 'raw-locked',
+            employeeId: 'employee-1',
+            attendanceDateRaw: '2026-09-18',
+          } as never,
+        ],
+        new Set(),
+        'actor-1',
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'ATTENDANCE_PERIOD_IMMUTABLE' },
+    });
   });
 
   it('khóa provision master/lịch khi chưa có phê duyệt nghiệp vụ', async () => {

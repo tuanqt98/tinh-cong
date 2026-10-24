@@ -3,16 +3,23 @@ import { Button, EmptyState, ErrorState, Skeleton, cn } from '@tinh-cong/ui';
 import {
   AlertTriangle,
   ArrowUp,
+  BarChart3,
+  Briefcase,
   CalendarDays,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
+  Database,
   Download,
   Eye,
+  FileText,
+  History,
   RotateCcw,
   Search,
+  Timer,
+  User,
   Users,
 } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
@@ -60,7 +67,9 @@ interface SummaryRow {
   tier100Seconds: number;
   tier130Seconds: number;
   tier150Seconds: number;
+  tier200Seconds: number;
   tier210Seconds: number;
+  tier230Seconds: number;
   lateSeconds: number;
   earlySeconds: number;
   workingDays: number | null;
@@ -78,7 +87,9 @@ interface SummaryTotals {
   tier100Seconds: number;
   tier130Seconds: number;
   tier150Seconds: number;
+  tier200Seconds: number;
   tier210Seconds: number;
+  tier230Seconds: number;
   lateSeconds: number;
   earlySeconds: number;
   attendanceDays: number;
@@ -137,7 +148,7 @@ function KpiCard({
 }: {
   label: string;
   value: string;
-  note?: string;
+  note?: string | undefined;
   icon: typeof Users;
   tone: 'blue' | 'green' | 'amber' | 'violet' | 'teal' | 'orange' | 'rose';
   loading: boolean;
@@ -438,7 +449,7 @@ export function AttendanceSummaryPage() {
         </div>
       )}
 
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-9">
         <KpiCard
           label="Tổng nhân viên"
           value={String(totals?.employees ?? 0)}
@@ -486,9 +497,25 @@ export function AttendanceSummaryPage() {
           loading={summary.isLoading}
         />
         <KpiCard
+          label="Giờ 200%"
+          value={formatDuration(totals?.tier200Seconds ?? 0)}
+          note={percentage(totals?.tier200Seconds ?? 0, totals?.workedSeconds ?? 0)}
+          icon={ArrowUp}
+          tone="blue"
+          loading={summary.isLoading}
+        />
+        <KpiCard
           label="Giờ 210%"
           value={formatDuration(totals?.tier210Seconds ?? 0)}
           note={percentage(totals?.tier210Seconds ?? 0, totals?.workedSeconds ?? 0)}
+          icon={ArrowUp}
+          tone="rose"
+          loading={summary.isLoading}
+        />
+        <KpiCard
+          label="Giờ 230%"
+          value={formatDuration(totals?.tier230Seconds ?? 0)}
+          note={percentage(totals?.tier230Seconds ?? 0, totals?.workedSeconds ?? 0)}
           icon={ArrowUp}
           tone="rose"
           loading={summary.isLoading}
@@ -578,7 +605,7 @@ export function AttendanceSummaryPage() {
           />
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-[1840px] w-full border-collapse text-left text-xs text-navy">
+            <table className="min-w-[2040px] w-full border-collapse text-left text-xs text-navy">
               <thead className="bg-slate-50 text-slate-600">
                 <tr className="border-b border-slate-200">
                   <th className="sticky left-0 z-20 w-12 bg-slate-50 px-3 py-3 text-center">#</th>
@@ -631,7 +658,9 @@ export function AttendanceSummaryPage() {
                   <th className="bg-emerald-50 px-3 py-3 text-center text-emerald-700">Giờ 100%</th>
                   <th className="bg-violet-50 px-3 py-3 text-center text-violet-700">Giờ 130%</th>
                   <th className="bg-orange-50 px-3 py-3 text-center text-orange-700">Giờ 150%</th>
+                  <th className="bg-sky-50 px-3 py-3 text-center text-sky-700">Giờ 200%</th>
                   <th className="bg-rose-50 px-3 py-3 text-center text-rose-700">Giờ 210%</th>
+                  <th className="bg-pink-50 px-3 py-3 text-center text-pink-700">Giờ 230%</th>
                   <th className="bg-red-50 px-3 py-3 text-center text-red-700">Đi muộn</th>
                   <th className="bg-amber-50 px-3 py-3 text-center text-amber-700">Về sớm</th>
                   <th className="px-3 py-3 text-center">Số ngày làm việc</th>
@@ -737,8 +766,14 @@ export function AttendanceSummaryPage() {
                       <td className="bg-orange-50/60 px-3 py-3 text-center font-semibold tabular-nums text-orange-700">
                         {formatDuration(row.tier150Seconds)}
                       </td>
+                      <td className="bg-sky-50/60 px-3 py-3 text-center font-semibold tabular-nums text-sky-700">
+                        {formatDuration(row.tier200Seconds)}
+                      </td>
                       <td className="bg-rose-50/60 px-3 py-3 text-center font-semibold tabular-nums text-rose-700">
                         {formatDuration(row.tier210Seconds)}
+                      </td>
+                      <td className="bg-pink-50/60 px-3 py-3 text-center font-semibold tabular-nums text-pink-700">
+                        {formatDuration(row.tier230Seconds)}
                       </td>
                       <td className="bg-red-50/50 px-3 py-3 text-center tabular-nums text-red-700">
                         {formatDuration(row.lateSeconds)}
@@ -795,8 +830,14 @@ export function AttendanceSummaryPage() {
                   <td className="bg-orange-50 px-3 py-3 text-center text-orange-700">
                     {formatDuration(totals?.tier150Seconds ?? 0)}
                   </td>
+                  <td className="bg-sky-50 px-3 py-3 text-center text-sky-700">
+                    {formatDuration(totals?.tier200Seconds ?? 0)}
+                  </td>
                   <td className="bg-rose-50 px-3 py-3 text-center text-rose-700">
                     {formatDuration(totals?.tier210Seconds ?? 0)}
+                  </td>
+                  <td className="bg-pink-50 px-3 py-3 text-center text-pink-700">
+                    {formatDuration(totals?.tier230Seconds ?? 0)}
                   </td>
                   <td className="bg-red-50 px-3 py-3 text-center text-red-700">
                     {formatDuration(totals?.lateSeconds ?? 0)}
@@ -885,128 +926,935 @@ export function AttendanceSummaryPage() {
   );
 }
 
+type DetailTab = 'detail' | 'summary' | 'chart' | 'source' | 'history';
+
 interface AttendanceDetailRow {
   id: string;
+  rawId: string;
+  rowNo: number;
   revision: number;
   status: 'VALID' | 'NEEDS_REVIEW';
+  engineVersion: string | null;
+  shiftDate: string | null;
+  shiftCode: string | null;
+  checkInAt: string | null;
+  checkOutAt: string | null;
+  presenceSeconds: number | null;
+  breakSeconds: number | null;
   workedSeconds: number | null;
   tier100Seconds: number | null;
   tier130Seconds: number | null;
   tier150Seconds: number | null;
+  tier200Seconds: number | null;
   tier210Seconds: number | null;
+  tier230Seconds: number | null;
   lateSeconds: number | null;
   earlySeconds: number | null;
-  normalization: {
-    shiftDate: string | null;
-    shiftCode: string | null;
-    checkInAt: string | null;
-    checkOutAt: string | null;
+  exceptions: Array<{ id: string; code: string; blocking: boolean; status: string }>;
+  source: {
+    employeeCode: string;
+    employeeName: string;
+    departmentName: string;
+    attendanceDate: string | null;
+    checkIn: string | null;
+    checkOut: string | null;
+    shiftName: string | null;
   };
-  raw: { employeeCode: string; employeeName: string; departmentName: string };
-  exceptions: Array<{ id: string; code: string; status: string }>;
+}
+
+interface AttendanceAdjustmentRow {
+  id: string;
+  rawId: string;
+  rowNo: number;
+  revision: number;
+  before: unknown;
+  after: unknown;
+  reason: string;
+  createdAt: string;
+  actor: { id: string; username: string };
+}
+
+interface AttendanceDetailResponse {
+  employee: {
+    id: string;
+    code: string;
+    name: string;
+    position: string | null;
+    startDate: string | null;
+    status: 'ACTIVE' | 'ON_LEAVE' | 'RESIGNED';
+    departmentName: string | null;
+  };
+  period: (Period & { timezone: string }) | null;
+  rows: AttendanceDetailRow[];
+  adjustments: AttendanceAdjustmentRow[];
+  totals: Omit<SummaryTotals, 'employees' | 'calculatedEmployees'>;
+  workingDays: number | null;
+  workingDaysAvailable: boolean;
+  calculationVersion: { engineVersions: string[]; maxRevision: number | null };
+}
+
+const detailTabs: Array<{
+  id: DetailTab;
+  label: string;
+  icon: typeof Clock3;
+}> = [
+  { id: 'detail', label: 'Bảng công chi tiết', icon: CalendarDays },
+  { id: 'summary', label: 'Tổng hợp', icon: FileText },
+  { id: 'chart', label: 'Biểu đồ', icon: BarChart3 },
+  { id: 'source', label: 'Dữ liệu nguồn', icon: Database },
+  { id: 'history', label: 'Lịch sử điều chỉnh', icon: History },
+];
+
+const employeeStatusMeta = {
+  ACTIVE: { label: 'Đang làm việc', className: 'bg-emerald-100 text-emerald-700' },
+  ON_LEAVE: { label: 'Tạm nghỉ', className: 'bg-violet-100 text-violet-700' },
+  RESIGNED: { label: 'Nghỉ việc', className: 'bg-rose-100 text-rose-700' },
+} as const;
+
+function detailDate(value: string | null, timezone = 'Asia/Ho_Chi_Minh') {
+  return value
+    ? new Intl.DateTimeFormat('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        timeZone: timezone,
+      }).format(new Date(value))
+    : '—';
+}
+
+function detailTime(value: string | null, timezone = 'Asia/Ho_Chi_Minh') {
+  return value
+    ? new Intl.DateTimeFormat('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone: timezone,
+      }).format(new Date(value))
+    : '—';
+}
+
+function detailHours(seconds: number | null | undefined, digits = 2) {
+  return seconds === null || seconds === undefined ? '—' : (seconds / 3600).toFixed(digits);
+}
+
+function detailWeekday(value: string | null, timezone = 'Asia/Ho_Chi_Minh') {
+  if (!value) return '—';
+  const label = new Intl.DateTimeFormat('vi-VN', { weekday: 'short', timeZone: timezone }).format(
+    new Date(value),
+  );
+  return label.charAt(0).toLocaleUpperCase('vi-VN') + label.slice(1);
+}
+
+function DetailMetric({
+  label,
+  value,
+  icon: Icon,
+  tone,
+  note,
+}: {
+  label: string;
+  value: string;
+  icon: typeof Clock3;
+  tone: 'blue' | 'green' | 'violet' | 'orange' | 'rose' | 'navy';
+  note?: string | undefined;
+}) {
+  const tones = {
+    blue: 'bg-blue-100 text-blue-600',
+    green: 'bg-emerald-100 text-emerald-600',
+    violet: 'bg-violet-100 text-violet-600',
+    orange: 'bg-orange-100 text-orange-500',
+    rose: 'bg-rose-100 text-rose-500',
+    navy: 'bg-slate-100 text-navy',
+  };
+  return (
+    <div className="flex min-h-[82px] items-center gap-2.5 rounded-xl border border-slate-100 bg-gradient-to-br from-white to-slate-50 p-2.5 shadow-sm">
+      <span
+        className={cn(
+          'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl',
+          tones[tone],
+        )}
+      >
+        <Icon className="h-5 w-5" />
+      </span>
+      <div className="min-w-0">
+        <p className="truncate text-[11px] text-slate-500">{label}</p>
+        <p className="mt-0.5 truncate text-base font-bold tabular-nums text-navy" title={value}>
+          {value}
+        </p>
+        {note && <p className="text-[10px] text-slate-400">{note}</p>}
+      </div>
+    </div>
+  );
 }
 
 export function AttendanceDetailPage() {
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const employeeId = params.get('employeeId');
   const periodId = params.get('periodId');
+  const [activeTab, setActiveTab] = useState<DetailTab>('detail');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
+  const periods = useQuery({ queryKey: ['periods'], queryFn: () => api<Period[]>('/periods') });
   const path = employeeId
     ? `/attendance/employee/${encodeURIComponent(employeeId)}${periodId ? `?periodId=${encodeURIComponent(periodId)}` : ''}`
     : '';
   const detail = useQuery({
     queryKey: ['attendance-detail', employeeId, periodId],
-    queryFn: () => api<AttendanceDetailRow[]>(path),
+    queryFn: () => api<AttendanceDetailResponse>(path),
     enabled: Boolean(path),
     retry: 1,
   });
+
+  useEffect(() => {
+    if (employeeId && !periodId && periods.data?.[0]) {
+      const next = new URLSearchParams(params);
+      next.set('periodId', periods.data[0].id);
+      setParams(next, { replace: true });
+    }
+  }, [employeeId, params, periodId, periods.data, setParams]);
+
+  const orderedPeriods = useMemo(
+    () =>
+      [...(periods.data ?? [])].sort(
+        (left, right) => left.year * 12 + left.month - (right.year * 12 + right.month),
+      ),
+    [periods.data],
+  );
+  const currentPeriodIndex = orderedPeriods.findIndex((item) => item.id === periodId);
+  const timezone = detail.data?.period?.timezone ?? 'Asia/Ho_Chi_Minh';
+  const totalPages = Math.max(1, Math.ceil((detail.data?.rows.length ?? 0) / pageSize));
+  const visibleRows = detail.data?.rows.slice((page - 1) * pageSize, page * pageSize) ?? [];
+  const status = detail.data ? employeeStatusMeta[detail.data.employee.status] : null;
+
+  const changePeriod = (index: number) => {
+    const period = orderedPeriods[index];
+    if (!period) return;
+    setPage(1);
+    const next = new URLSearchParams(params);
+    next.set('periodId', period.id);
+    setParams(next);
+  };
+
+  const exportPdf = async () => {
+    if (!employeeId || !detail.data?.period) return;
+    setExportError('');
+    setExporting(true);
+    try {
+      const query = new URLSearchParams({ periodId: detail.data.period.id });
+      const blob = await apiBlob(
+        `/attendance/employee/${encodeURIComponent(employeeId)}/pdf?${query.toString()}`,
+      );
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `chi-tiet-bang-cong-${detail.data.employee.code}-${detail.data.period.year}-${String(detail.data.period.month).padStart(2, '0')}.pdf`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'Không thể xuất PDF.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold text-navy">Chi tiết bảng công</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Ngày ca, timestamp, mức công và ngoại lệ theo nhân viên trong kỳ.
-        </p>
+      <div className="flex flex-col justify-between gap-3 xl:flex-row xl:items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-navy">Chi tiết bảng công</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            <Link to="/attendance" className="hover:text-primary">
+              Bảng công tổng hợp
+            </Link>{' '}
+            <span className="px-1">›</span> Chi tiết bảng công
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="secondary"
+            className="h-10 border border-slate-200 bg-white text-navy hover:bg-slate-50"
+            disabled={currentPeriodIndex <= 0}
+            onClick={() => changePeriod(currentPeriodIndex - 1)}
+          >
+            <ChevronLeft className="h-4 w-4" /> Tháng trước
+          </Button>
+          <label className="relative min-w-[180px]">
+            <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-navy" />
+            <select
+              aria-label="Kỳ công"
+              className={cn(controlClass, 'pl-9 font-semibold')}
+              value={periodId ?? ''}
+              onChange={(event) => {
+                setPage(1);
+                const next = new URLSearchParams(params);
+                next.set('periodId', event.target.value);
+                setParams(next);
+              }}
+            >
+              {!periodId && <option value="">Chọn kỳ công</option>}
+              {orderedPeriods.map((period) => (
+                <option key={period.id} value={period.id}>
+                  Tháng {String(period.month).padStart(2, '0')}/{period.year}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Button
+            variant="secondary"
+            className="h-10 border border-slate-200 bg-white text-navy hover:bg-slate-50"
+            disabled={currentPeriodIndex < 0 || currentPeriodIndex >= orderedPeriods.length - 1}
+            onClick={() => changePeriod(currentPeriodIndex + 1)}
+          >
+            Tháng sau <ChevronRight className="h-4 w-4" />
+          </Button>
+          <Button
+            className="h-10 min-w-[130px]"
+            onClick={() => void exportPdf()}
+            disabled={exporting || !detail.data?.period}
+          >
+            <Download className="h-4 w-4" /> {exporting ? 'Đang xuất...' : 'Xuất PDF'}
+          </Button>
+        </div>
       </div>
+
+      {exportError && <ErrorState message={exportError} />}
       {!employeeId ? (
-        <EmptyState description="Chọn một nhân viên từ Bảng công tổng hợp để xem chi tiết." />
+        <div className="rounded-xl border border-slate-200 bg-white py-16 text-center">
+          <User className="mx-auto h-10 w-10 text-slate-300" />
+          <p className="mt-3 text-sm text-slate-500">
+            Chọn một nhân viên từ Bảng công tổng hợp để xem chi tiết.
+          </p>
+          <Link
+            to="/attendance"
+            className="mt-4 inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-white hover:bg-blue-700"
+          >
+            Mở Bảng công tổng hợp
+          </Link>
+        </div>
       ) : detail.isError ? (
         <ErrorState message={detail.error.message} />
       ) : detail.isLoading ? (
-        <Skeleton className="h-72" />
-      ) : !detail.data?.length ? (
-        <EmptyState description="Nhân viên chưa có dữ liệu tính công trong kỳ đã chọn." />
-      ) : (
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-          <table className="min-w-[1200px] w-full text-left text-sm">
-            <thead className="bg-slate-50 text-xs text-slate-600">
-              <tr>
-                {[
-                  'Ngày ca',
-                  'Ca',
-                  'Giờ vào',
-                  'Giờ ra',
-                  'Tổng công',
-                  '100%',
-                  '130%',
-                  '150%',
-                  '210%',
-                  'Đi muộn',
-                  'Về sớm',
-                  'Revision',
-                  'Ngoại lệ',
-                ].map((header) => (
-                  <th key={header} className="px-3 py-3">
-                    {header}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {detail.data.map((row) => (
-                <tr key={row.id} className="border-t border-slate-100">
-                  <td className="px-3 py-3">
-                    {row.normalization.shiftDate
-                      ? new Intl.DateTimeFormat('vi-VN').format(
-                          new Date(row.normalization.shiftDate),
-                        )
-                      : '—'}
-                  </td>
-                  <td className="px-3 py-3">{row.normalization.shiftCode ?? '—'}</td>
-                  <td className="px-3 py-3">
-                    {row.normalization.checkInAt
-                      ? new Date(row.normalization.checkInAt).toLocaleString('vi-VN')
-                      : '—'}
-                  </td>
-                  <td className="px-3 py-3">
-                    {row.normalization.checkOutAt
-                      ? new Date(row.normalization.checkOutAt).toLocaleString('vi-VN')
-                      : '—'}
-                  </td>
-                  {[
-                    row.workedSeconds,
-                    row.tier100Seconds,
-                    row.tier130Seconds,
-                    row.tier150Seconds,
-                    row.tier210Seconds,
-                    row.lateSeconds,
-                    row.earlySeconds,
-                  ].map((value, index) => (
-                    <td key={index} className="px-3 py-3 tabular-nums">
-                      {formatDuration(value)}
-                    </td>
-                  ))}
-                  <td className="px-3 py-3">{row.revision}</td>
-                  <td className="px-3 py-3">
-                    {row.exceptions.length
-                      ? row.exceptions.map((item) => item.code).join(', ')
-                      : '—'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
+          <Skeleton className="h-[760px]" />
+          <Skeleton className="h-[560px]" />
         </div>
-      )}
+      ) : detail.data ? (
+        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_200px]">
+          <div className="min-w-0 space-y-4">
+            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+              <div className="grid lg:grid-cols-[330px_minmax(0,1fr)]">
+                <div className="flex items-center gap-4 border-b border-slate-100 p-5 lg:border-b-0 lg:border-r">
+                  <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-gradient-to-b from-blue-100 to-blue-200 text-primary">
+                    <User className="h-11 w-11" strokeWidth={1.7} />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-500">
+                      {detail.data.employee.code}
+                    </p>
+                    <h2
+                      className="truncate text-xl font-bold text-navy"
+                      title={detail.data.employee.name}
+                    >
+                      {detail.data.employee.name}
+                    </h2>
+                    <p className="mt-2 flex items-center gap-2 text-xs text-slate-500">
+                      <Users className="h-4 w-4" /> Phòng ban:{' '}
+                      {detail.data.employee.departmentName ?? '—'}
+                    </p>
+                    <p className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+                      <Briefcase className="h-4 w-4" /> Chức danh:{' '}
+                      {detail.data.employee.position ?? 'Chưa cập nhật'}
+                    </p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2.5 p-3 sm:grid-cols-3 2xl:grid-cols-5">
+                  <DetailMetric
+                    label="Tổng giờ công"
+                    value={detailHours(detail.data.totals.workedSeconds, 1)}
+                    icon={Clock3}
+                    tone="blue"
+                    note="giờ"
+                  />
+                  <DetailMetric
+                    label="Giờ 100%"
+                    value={detailHours(detail.data.totals.tier100Seconds, 1)}
+                    icon={ArrowUp}
+                    tone="green"
+                    note="giờ"
+                  />
+                  <DetailMetric
+                    label="Giờ 130%"
+                    value={detailHours(detail.data.totals.tier130Seconds, 1)}
+                    icon={ArrowUp}
+                    tone="violet"
+                    note="giờ"
+                  />
+                  <DetailMetric
+                    label="Giờ 150%"
+                    value={detailHours(detail.data.totals.tier150Seconds, 1)}
+                    icon={ArrowUp}
+                    tone="orange"
+                    note="giờ"
+                  />
+                  <DetailMetric
+                    label="Giờ 200%"
+                    value={detailHours(detail.data.totals.tier200Seconds, 1)}
+                    icon={ArrowUp}
+                    tone="blue"
+                    note="giờ"
+                  />
+                  <DetailMetric
+                    label="Giờ 210%"
+                    value={detailHours(detail.data.totals.tier210Seconds, 1)}
+                    icon={ArrowUp}
+                    tone="rose"
+                    note="giờ"
+                  />
+                  <DetailMetric
+                    label="Giờ 230%"
+                    value={detailHours(detail.data.totals.tier230Seconds, 1)}
+                    icon={ArrowUp}
+                    tone="rose"
+                    note="giờ"
+                  />
+                  <DetailMetric
+                    label="Đi muộn"
+                    value={detailHours(detail.data.totals.lateSeconds, 1)}
+                    icon={Timer}
+                    tone="rose"
+                    note="giờ"
+                  />
+                  <DetailMetric
+                    label="Về sớm"
+                    value={detailHours(detail.data.totals.earlySeconds, 1)}
+                    icon={Timer}
+                    tone="orange"
+                    note="giờ"
+                  />
+                  <DetailMetric
+                    label="Số ngày làm việc"
+                    value={
+                      detail.data.workingDaysAvailable
+                        ? String(detail.data.workingDays ?? 0)
+                        : 'N/A'
+                    }
+                    icon={CalendarDays}
+                    tone="navy"
+                    note={!detail.data.workingDaysAvailable ? 'Chưa có policy' : undefined}
+                  />
+                  <DetailMetric
+                    label="Số ngày có mặt"
+                    value={`${detail.data.totals.attendanceDays} ngày`}
+                    icon={CalendarDays}
+                    tone="violet"
+                  />
+                  <DetailMetric
+                    label="Số ngoại lệ"
+                    value={String(detail.data.totals.exceptionCount)}
+                    icon={AlertTriangle}
+                    tone="rose"
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+              <div className="overflow-x-auto border-b border-slate-200">
+                <nav className="flex min-w-max px-3" aria-label="Nội dung bảng công">
+                  {detailTabs.map((tab) => {
+                    const Icon = tab.icon;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        className={cn(
+                          'flex h-12 items-center gap-2 border-b-2 px-4 text-sm font-medium transition',
+                          activeTab === tab.id
+                            ? 'border-primary text-primary'
+                            : 'border-transparent text-slate-500 hover:text-navy',
+                        )}
+                        onClick={() => {
+                          setActiveTab(tab.id);
+                          setPage(1);
+                        }}
+                      >
+                        <Icon className="h-4 w-4" /> {tab.label}
+                      </button>
+                    );
+                  })}
+                </nav>
+              </div>
+
+              {activeTab === 'detail' && (
+                <>
+                  {detail.data.rows.length ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[1280px] text-left text-xs">
+                        <thead className="bg-slate-50 text-[11px] text-slate-600">
+                          <tr>
+                            {[
+                              '#',
+                              'Ngày',
+                              'Thứ',
+                              'Ca',
+                              'Giờ vào',
+                              'Giờ ra',
+                              'Giờ nghỉ',
+                              'Giờ tính công',
+                              '100%',
+                              '130%',
+                              '150%',
+                              '200%',
+                              '210%',
+                              '230%',
+                              'Đi muộn',
+                              'Về sớm',
+                              'Trạng thái',
+                              'Ghi chú',
+                            ].map((header) => (
+                              <th
+                                key={header}
+                                className="whitespace-nowrap border-r border-slate-200 px-2.5 py-3 text-center font-semibold last:border-r-0"
+                              >
+                                {header}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {visibleRows.map((row, index) => (
+                            <tr
+                              key={row.id}
+                              className={cn(
+                                'border-t border-slate-100',
+                                row.status !== 'VALID' && 'bg-rose-50/60',
+                              )}
+                            >
+                              <td className="px-2.5 py-2.5 text-center text-slate-500">
+                                {(page - 1) * pageSize + index + 1}
+                              </td>
+                              <td className="whitespace-nowrap px-2.5 py-2.5 text-center font-medium text-navy">
+                                {detailDate(row.shiftDate, timezone)}
+                              </td>
+                              <td className="whitespace-nowrap px-2.5 py-2.5 text-center">
+                                {detailWeekday(row.shiftDate, timezone)}
+                              </td>
+                              <td className="px-2.5 py-2.5 text-center">
+                                <span
+                                  className={cn(
+                                    'rounded-full px-2.5 py-1 font-semibold',
+                                    row.shiftCode === 'CA3'
+                                      ? 'bg-violet-100 text-violet-700'
+                                      : 'bg-blue-100 text-blue-700',
+                                  )}
+                                >
+                                  {row.shiftCode ?? '—'}
+                                </span>
+                              </td>
+                              <td className="px-2.5 py-2.5 text-center tabular-nums">
+                                {detailTime(row.checkInAt, timezone)}
+                              </td>
+                              <td className="px-2.5 py-2.5 text-center tabular-nums">
+                                {detailTime(row.checkOutAt, timezone)}
+                              </td>
+                              {[
+                                row.breakSeconds,
+                                row.workedSeconds,
+                                row.tier100Seconds,
+                                row.tier130Seconds,
+                                row.tier150Seconds,
+                                row.tier200Seconds,
+                                row.tier210Seconds,
+                                row.tier230Seconds,
+                                row.lateSeconds,
+                                row.earlySeconds,
+                              ].map((value, valueIndex) => (
+                                <td
+                                  key={valueIndex}
+                                  className={cn(
+                                    'px-2.5 py-2.5 text-center tabular-nums',
+                                    valueIndex === 3 && 'text-violet-700',
+                                    valueIndex === 4 && 'text-orange-600',
+                                    valueIndex === 5 && 'text-sky-600',
+                                    valueIndex === 6 && 'text-rose-600',
+                                    valueIndex === 7 && 'text-pink-600',
+                                  )}
+                                >
+                                  {detailHours(value)}
+                                </td>
+                              ))}
+                              <td className="px-2.5 py-2.5 text-center">
+                                <span
+                                  className={cn(
+                                    'whitespace-nowrap rounded-full px-2.5 py-1 font-semibold',
+                                    row.status === 'VALID'
+                                      ? 'bg-emerald-100 text-emerald-700'
+                                      : 'bg-amber-100 text-amber-700',
+                                  )}
+                                >
+                                  {row.status === 'VALID' ? 'Hợp lệ' : 'Cần kiểm tra'}
+                                </span>
+                              </td>
+                              <td
+                                className="max-w-48 truncate px-2.5 py-2.5 text-slate-500"
+                                title={row.exceptions.map((item) => item.code).join(', ')}
+                              >
+                                {row.exceptions.length
+                                  ? row.exceptions.map((item) => item.code).join(', ')
+                                  : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot className="border-t border-slate-200 bg-slate-50 font-bold text-navy">
+                          <tr>
+                            <td colSpan={7} className="px-3 py-3 text-right">
+                              Tổng cộng
+                            </td>
+                            {[
+                              detail.data.totals.workedSeconds,
+                              detail.data.totals.tier100Seconds,
+                              detail.data.totals.tier130Seconds,
+                              detail.data.totals.tier150Seconds,
+                              detail.data.totals.tier200Seconds,
+                              detail.data.totals.tier210Seconds,
+                              detail.data.totals.tier230Seconds,
+                              detail.data.totals.lateSeconds,
+                              detail.data.totals.earlySeconds,
+                            ].map((value, index) => (
+                              <td key={index} className="px-2.5 py-3 text-center tabular-nums">
+                                {detailHours(value)}
+                              </td>
+                            ))}
+                            <td colSpan={2} />
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  ) : (
+                    <EmptyState description="Nhân viên chưa có dữ liệu nguồn hoặc kết quả tính công trong kỳ đã chọn." />
+                  )}
+                  <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3 text-xs text-slate-500">
+                      <select
+                        aria-label="Hiển thị chi tiết"
+                        className="h-9 rounded-lg border border-slate-200 bg-white px-3"
+                        value={pageSize}
+                        onChange={(event) => {
+                          setPageSize(Number(event.target.value));
+                          setPage(1);
+                        }}
+                      >
+                        {[10, 15, 30].map((size) => (
+                          <option key={size} value={size}>
+                            Hiển thị {size} dòng
+                          </option>
+                        ))}
+                      </select>
+                      <span>
+                        Đang hiển thị {detail.data.rows.length ? (page - 1) * pageSize + 1 : 0} -{' '}
+                        {Math.min(page * pageSize, detail.data.rows.length)} /{' '}
+                        {detail.data.rows.length} dòng
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="rounded-md border border-slate-200 p-2 disabled:opacity-40"
+                        disabled={page <= 1}
+                        onClick={() => setPage((current) => current - 1)}
+                        aria-label="Trang trước"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <span className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white">
+                        {page}
+                      </span>
+                      <span className="text-xs text-slate-500">/ {totalPages}</span>
+                      <button
+                        className="rounded-md border border-slate-200 p-2 disabled:opacity-40"
+                        disabled={page >= totalPages}
+                        onClick={() => setPage((current) => current + 1)}
+                        aria-label="Trang sau"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {activeTab === 'summary' && (
+                <div className="grid gap-4 p-5 md:grid-cols-2">
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    <h3 className="font-bold text-navy">Cơ cấu giờ công</h3>
+                    <dl className="mt-4 space-y-3 text-sm">
+                      {[
+                        ['Tổng giờ công', detail.data.totals.workedSeconds],
+                        ['Giờ 100%', detail.data.totals.tier100Seconds],
+                        ['Giờ 130%', detail.data.totals.tier130Seconds],
+                        ['Giờ 150%', detail.data.totals.tier150Seconds],
+                        ['Giờ 200%', detail.data.totals.tier200Seconds],
+                        ['Giờ 210%', detail.data.totals.tier210Seconds],
+                        ['Giờ 230%', detail.data.totals.tier230Seconds],
+                      ].map(([label, value]) => (
+                        <div
+                          key={String(label)}
+                          className="flex justify-between border-b border-slate-100 pb-2"
+                        >
+                          <dt className="text-slate-500">{label}</dt>
+                          <dd className="font-semibold tabular-nums text-navy">
+                            {formatDuration(value as number)}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    <h3 className="font-bold text-navy">Chất lượng dữ liệu</h3>
+                    <dl className="mt-4 space-y-3 text-sm">
+                      <div className="flex justify-between">
+                        <dt className="text-slate-500">Ngày có mặt</dt>
+                        <dd className="font-semibold text-navy">
+                          {detail.data.totals.attendanceDays}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between">
+                        <dt className="text-slate-500">Ngoại lệ mở</dt>
+                        <dd className="font-semibold text-rose-600">
+                          {detail.data.totals.exceptionCount}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between">
+                        <dt className="text-slate-500">Revision cao nhất</dt>
+                        <dd className="font-semibold text-navy">
+                          {detail.data.calculationVersion.maxRevision ?? '—'}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between gap-4">
+                        <dt className="text-slate-500">Engine</dt>
+                        <dd
+                          className="truncate font-semibold text-navy"
+                          title={detail.data.calculationVersion.engineVersions.join(', ')}
+                        >
+                          {detail.data.calculationVersion.engineVersions.join(', ') || '—'}
+                        </dd>
+                      </div>
+                    </dl>
+                    <p className="mt-4 rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
+                      Số ngày làm việc chưa được suy diễn vì chưa có lịch/policy được phê duyệt.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'chart' && (
+                <div className="p-5">
+                  <h3 className="font-bold text-navy">Tỷ trọng theo mức công</h3>
+                  <div className="mt-5 space-y-4">
+                    {[
+                      ['100%', detail.data.totals.tier100Seconds, 'bg-emerald-500'],
+                      ['130%', detail.data.totals.tier130Seconds, 'bg-violet-500'],
+                      ['150%', detail.data.totals.tier150Seconds, 'bg-orange-500'],
+                      ['200%', detail.data.totals.tier200Seconds, 'bg-sky-500'],
+                      ['210%', detail.data.totals.tier210Seconds, 'bg-rose-500'],
+                      ['230%', detail.data.totals.tier230Seconds, 'bg-pink-500'],
+                    ].map(([label, value, color]) => {
+                      const seconds = value as number;
+                      const ratio = detail.data.totals.workedSeconds
+                        ? (seconds / detail.data.totals.workedSeconds) * 100
+                        : 0;
+                      return (
+                        <div
+                          key={String(label)}
+                          className="grid grid-cols-[52px_minmax(0,1fr)_150px] items-center gap-3 text-sm"
+                        >
+                          <span className="font-semibold text-navy">{label}</span>
+                          <div className="h-5 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className={cn('h-full rounded-full', color as string)}
+                              style={{ width: `${Math.min(100, ratio)}%` }}
+                            />
+                          </div>
+                          <span className="text-right tabular-nums text-slate-600">
+                            {formatDuration(seconds)} ({ratio.toFixed(1)}%)
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'source' && (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[900px] text-left text-xs">
+                    <thead className="bg-slate-50 text-slate-600">
+                      <tr>
+                        {[
+                          'Dòng',
+                          'Mã nhân viên',
+                          'Tên nhân viên',
+                          'Phòng ban',
+                          'Ngày chấm công',
+                          'Giờ vào',
+                          'Giờ ra',
+                          'Tên ca',
+                        ].map((header) => (
+                          <th key={header} className="px-3 py-3 font-semibold">
+                            {header}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detail.data.rows.map((row) => (
+                        <tr key={row.rawId} className="border-t border-slate-100">
+                          <td className="px-3 py-3">{row.rowNo}</td>
+                          <td className="px-3 py-3 font-semibold">{row.source.employeeCode}</td>
+                          <td className="px-3 py-3">{row.source.employeeName}</td>
+                          <td className="px-3 py-3">{row.source.departmentName}</td>
+                          <td className="px-3 py-3">{row.source.attendanceDate ?? '—'}</td>
+                          <td className="px-3 py-3">{row.source.checkIn ?? '—'}</td>
+                          <td className="px-3 py-3">{row.source.checkOut ?? '—'}</td>
+                          <td className="px-3 py-3">{row.source.shiftName ?? '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {activeTab === 'history' &&
+                (detail.data.adjustments.length ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[760px] text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-600">
+                        <tr>
+                          {['Thời gian', 'Dòng nguồn', 'Revision', 'Người thực hiện', 'Lý do'].map(
+                            (header) => (
+                              <th key={header} className="px-3 py-3 font-semibold">
+                                {header}
+                              </th>
+                            ),
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detail.data.adjustments.map((item) => (
+                          <tr key={item.id} className="border-t border-slate-100">
+                            <td className="px-3 py-3">
+                              {new Date(item.createdAt).toLocaleString('vi-VN', {
+                                timeZone: timezone,
+                              })}
+                            </td>
+                            <td className="px-3 py-3">{item.rowNo}</td>
+                            <td className="px-3 py-3">{item.revision}</td>
+                            <td className="px-3 py-3">{item.actor.username}</td>
+                            <td className="px-3 py-3">{item.reason}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <EmptyState description="Chưa có điều chỉnh nào trong kỳ này. Mọi điều chỉnh phải có revision, actor và lý do." />
+                ))}
+            </section>
+            <p className="flex items-start gap-2 text-xs text-slate-500">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+              Chỉ hiển thị revision mới nhất của từng dòng nguồn. Ngày không có dữ liệu không được
+              tự gán là nghỉ; thao tác chỉnh sửa/chốt công vẫn khóa cho tới khi Q10/Q11 được duyệt.
+            </p>
+          </div>
+
+          <aside className="space-y-3">
+            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <h3 className="text-sm font-bold text-navy">Thông tin nhân viên</h3>
+              <dl className="mt-4 space-y-3 text-xs">
+                {[
+                  ['Mã nhân viên', detail.data.employee.code],
+                  ['Họ tên', detail.data.employee.name],
+                  ['Phòng ban', detail.data.employee.departmentName ?? '—'],
+                  ['Chức danh', detail.data.employee.position ?? 'Chưa cập nhật'],
+                  ['Ngày vào làm', detailDate(detail.data.employee.startDate, timezone)],
+                ].map(([label, value]) => (
+                  <div key={label}>
+                    <dt className="text-slate-500">{label}</dt>
+                    <dd className="mt-1 font-medium text-navy">{value}</dd>
+                  </div>
+                ))}
+                <div>
+                  <dt className="text-slate-500">Trạng thái</dt>
+                  <dd className="mt-1">
+                    {status && (
+                      <span
+                        className={cn(
+                          'inline-flex rounded-full px-2.5 py-1 font-semibold',
+                          status.className,
+                        )}
+                      >
+                        {status.label}
+                      </span>
+                    )}
+                  </dd>
+                </div>
+              </dl>
+            </section>
+            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <h3 className="text-sm font-bold text-navy">
+                Tổng hợp tháng{' '}
+                {detail.data.period
+                  ? `${String(detail.data.period.month).padStart(2, '0')}/${detail.data.period.year}`
+                  : '—'}
+              </h3>
+              <dl className="mt-4 space-y-3 text-[11px]">
+                {[
+                  ['Tổng giờ công', detail.data.totals.workedSeconds, 'text-blue-600'],
+                  ['Giờ 100%', detail.data.totals.tier100Seconds, 'text-emerald-600'],
+                  ['Giờ 130%', detail.data.totals.tier130Seconds, 'text-violet-600'],
+                  ['Giờ 150%', detail.data.totals.tier150Seconds, 'text-orange-600'],
+                  ['Giờ 200%', detail.data.totals.tier200Seconds, 'text-sky-600'],
+                  ['Giờ 210%', detail.data.totals.tier210Seconds, 'text-rose-600'],
+                  ['Giờ 230%', detail.data.totals.tier230Seconds, 'text-pink-600'],
+                  ['Đi muộn', detail.data.totals.lateSeconds, 'text-rose-600'],
+                  ['Về sớm', detail.data.totals.earlySeconds, 'text-orange-600'],
+                ].map(([label, value, color]) => (
+                  <div key={String(label)} className="flex items-center justify-between gap-2">
+                    <dt className={cn('font-medium', color as string)}>{label}</dt>
+                    <dd className="tabular-nums text-navy">
+                      {detailHours(value as number, 1)} giờ
+                    </dd>
+                  </div>
+                ))}
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Số ngày làm việc</dt>
+                  <dd className="font-semibold text-navy">N/A</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Số ngày có mặt</dt>
+                  <dd className="font-semibold text-navy">{detail.data.totals.attendanceDays}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-rose-600">Số ngoại lệ</dt>
+                  <dd className="font-semibold text-rose-600">
+                    {detail.data.totals.exceptionCount}
+                  </dd>
+                </div>
+              </dl>
+            </section>
+            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <h3 className="text-sm font-bold text-navy">Ghi chú</h3>
+              <p className="mt-3 min-h-16 rounded-lg border border-slate-200 p-3 text-xs text-slate-500">
+                {detail.data.totals.exceptionCount
+                  ? 'Có ngoại lệ mở cần xử lý tại màn Xử lý ngoại lệ.'
+                  : 'Không có ngoại lệ mở trong dữ liệu đang hiển thị.'}
+              </p>
+            </section>
+          </aside>
+        </div>
+      ) : null}
     </div>
   );
 }

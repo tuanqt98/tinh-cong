@@ -227,6 +227,20 @@ export class CoreController {
   }
 
   @Roles(RoleCode.ADMIN, RoleCode.HR, RoleCode.MANAGER, RoleCode.EMPLOYEE)
+  @Get('attendance/employee/:id/pdf')
+  async employeeAttendancePdf(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: EmployeeAttendanceQueryDto,
+  ) {
+    const buffer = await this.core.employeeAttendancePdf(user, id, query.periodId);
+    return new StreamableFile(buffer, {
+      type: 'application/pdf',
+      disposition: `attachment; filename="chi-tiet-bang-cong-${id}.pdf"`,
+    });
+  }
+
+  @Roles(RoleCode.ADMIN, RoleCode.HR, RoleCode.MANAGER, RoleCode.EMPLOYEE)
   @Get('attendance/employee/:id')
   employeeAttendance(
     @CurrentUser() user: AuthenticatedUser,
