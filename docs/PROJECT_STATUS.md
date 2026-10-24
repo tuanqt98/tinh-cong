@@ -34,9 +34,9 @@ Màn Chi tiết bảng công đã thay bảng thô bằng UI/API thật với h�
 
 DEC-008 đã được triển khai ở source bằng rule Ca 3 v2 hiệu lực từ 01/09/2026: 19:00–07:00, không tính phần trước 19:00, chỉ nhận khối đủ 30 phút sau 07:00, 4 giờ 100% + 4 giờ 130% + phần vượt 8 giờ 210%. Raw giữ nguyên, thay đổi rule sinh revision mới và kỳ LOCKED/PUBLISHED không được tính lại trực tiếp. Chưa rebuild image runtime hoặc đối chiếu lại `SX.xlsx` với expected HR nên trạng thái deployment vẫn PARTIAL/BLOCKED.
 
-DEC-009 đã được triển khai ở source bằng rule Ca 1 v2 hiệu lực từ 01/09/2026: 07:00–19:00, không tính phần trước 07:00, chỉ nhận khối đủ 30 phút sau 19:00, 8 giờ 100% + phần vượt 8 giờ 150%. Raw và rule lịch sử giữ nguyên; chưa rebuild image runtime hoặc tính lại `SX.xlsx`, nên trạng thái deployment vẫn PARTIAL/BLOCKED.
+DEC-009 đã được triển khai bằng rule Ca 1 v2 hiệu lực từ 01/09/2026: 07:00–19:00, không tính phần trước 07:00, chỉ nhận khối đủ 30 phút sau 19:00, 8 giờ 100% + phần vượt 8 giờ 150%. Raw và rule lịch sử giữ nguyên; runtime development đã migrate/tính lại bằng revision mới, nhưng image Dockerfile tái lập vẫn PARTIAL/BLOCKED.
 
-DEC-010 đã được triển khai ở source bằng rule v3 cho cả hai ca hiệu lực từ 01/09/2026: nếu `shiftDate` là Chủ nhật, toàn bộ công Ca 1 vào 200% và toàn bộ công Ca 3 vào 230%; các tier khác bằng 0. Schema, API, dashboard, tổng hợp/chi tiết, Excel và PDF đều đã có hai tier mới. Chưa rebuild image runtime hoặc tính lại `SX.xlsx`, nên trạng thái deployment vẫn PARTIAL/BLOCKED.
+DEC-010 đã được triển khai bằng rule v3 cho cả hai ca hiệu lực từ 01/09/2026: nếu `shiftDate` là Chủ nhật, toàn bộ công Ca 1 vào 200% và toàn bộ công Ca 3 vào 230%; các tier khác bằng 0. Schema, API, dashboard, tổng hợp/chi tiết, Excel và PDF đều đã có hai tier mới. Runtime development đã áp đủ năm migration, cập nhật API/web qua writable layer và tính lại `SX.xlsx`; image Dockerfile tái lập và HR/UAT vẫn PARTIAL/BLOCKED.
 
 ## 3. Các lỗi kỹ thuật đã phát hiện và tự động khắc phục
 
@@ -62,13 +62,13 @@ DEC-010 đã được triển khai ở source bằng rule v3 cho cả hai ca hi�
 
 ## 5. Danh sách Blocker cần quyết định / dữ liệu từ bên ngoài
 
-| STT | Mã / Hạng mục   | Trạng thái                             | Yêu cầu / Câu hỏi còn mở                                                                                                                                                                 |
-| --- | --------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `Q01 / SX.xlsx` | **PARTIAL/BLOCKED**                    | File đã ACCEPTED 2.765 raw rows; 83/92 mã có master. 1.726 calculation hiện có được tạo trước DEC-008/009/010, chưa tính lại; còn 9 mã/270 dòng thiếu master và chưa có expected HR/UAT. |
-| 2   | `DEC-002 / Q04` | **PARTIALLY_CONFIRMED**                | Trường hợp `Ca3` hiện tại đã có tiêu chí D+1 theo DEC-007; các dạng checkout khác thiếu căn cứ vẫn `NEEDS_REVIEW`.                                                                       |
-| 3   | `DEC-003 / Q05` | **PARTIALLY_CONFIRMED; KEY CONFIRMED** | Đã cấu hình `employeeCode,attendanceDate,shiftName`; còn mở quy trình file sửa/file nhiều kỳ.                                                                                            |
-| 4   | `Q10 / Q11`     | **OPEN**                               | Cần duyệt luồng phê duyệt (ai duyệt, tách vai trò lập/duyệt, điều chỉnh sau khóa). Hiện tại: tắt toàn bộ workflow.                                                                       |
-| 5   | `Q15 / PDF`     | **PARTIAL**                            | Cần mẫu bảng công chính thức, logo, tiêu đề công ty để thay thế watermark development.                                                                                                   |
+| STT | Mã / Hạng mục   | Trạng thái                             | Yêu cầu / Câu hỏi còn mở                                                                                                                                                        |
+| --- | --------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `Q01 / SX.xlsx` | **PARTIAL/BLOCKED**                    | File đã ACCEPTED 2.765 raw rows; 83/92 mã có master. 1.726 latest calculation đã được tính lại theo DEC-008/009/010; còn 9 mã/270 dòng thiếu master và chưa có expected HR/UAT. |
+| 2   | `DEC-002 / Q04` | **PARTIALLY_CONFIRMED**                | Trường hợp `Ca3` hiện tại đã có tiêu chí D+1 theo DEC-007; các dạng checkout khác thiếu căn cứ vẫn `NEEDS_REVIEW`.                                                              |
+| 3   | `DEC-003 / Q05` | **PARTIALLY_CONFIRMED; KEY CONFIRMED** | Đã cấu hình `employeeCode,attendanceDate,shiftName`; còn mở quy trình file sửa/file nhiều kỳ.                                                                                   |
+| 4   | `Q10 / Q11`     | **OPEN**                               | Cần duyệt luồng phê duyệt (ai duyệt, tách vai trò lập/duyệt, điều chỉnh sau khóa). Hiện tại: tắt toàn bộ workflow.                                                              |
+| 5   | `Q15 / PDF`     | **PARTIAL**                            | Cần mẫu bảng công chính thức, logo, tiêu đề công ty để thay thế watermark development.                                                                                          |
 
 ---
 

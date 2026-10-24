@@ -49,7 +49,7 @@ Cập nhật 24/10/2026. Trước khi sửa code, đọc `docs/13_PROGRESS_REPOR
 
 ## Blocker hiện tại
 
-- `SX.xlsx` hiện `ACCEPTED` với 2.765 raw rows và 1.740 source issues. 83/92 mã nguồn đã có master; pipeline development từng tạo 1.726 calculation `VALID` trước DEC-008/DEC-009/DEC-010. Các calculation này chưa được tính lại theo rule mới và không được dùng làm oracle. Còn 9 mã/270 dòng thiếu master, 694 dòng ca không hỗ trợ, 65 dòng thiếu timestamp evidence và 10 dòng nhiều bản ghi cùng nhân viên/ngày. Không tự provision master, không tự tính dòng bị chặn.
+- `SX.xlsx` hiện `ACCEPTED` với 2.765 raw rows và 1.740 source issues. Runtime development ngày 24/10 đã áp đủ năm migration và xử lý lại 1.726 calculation mới nhất theo DEC-008/DEC-009/DEC-010 cho 83/92 mã có master bằng revision bất biến. Kết quả này chỉ là kiểm chứng vận hành, không phải oracle HR/UAT. Còn 9 mã/270 dòng thiếu master, 694 dòng ca không hỗ trợ, 65 dòng thiếu timestamp evidence và 10 dòng nhiều bản ghi cùng nhân viên/ngày. Không tự provision master, không tự tính dòng bị chặn.
 - DEC-002 đã đủ cho trường hợp nguồn `Ca3` hiện tại theo DEC-007; các trường hợp checkout khác ngoài tiêu chí đã chốt vẫn OPEN.
 - DEC-003 đã chốt khóa `Mã nhân viên + Ngày chấm công + Tên ca`; quy trình file sửa/file nhiều kỳ vẫn OPEN.
 - Q10/Q11 và các quyết định phát hành/chỉnh sửa sau khóa chưa duyệt.
