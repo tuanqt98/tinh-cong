@@ -21,6 +21,7 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let adminToken: string;
+  let hrToken: string;
   let employeeToken: string;
   let adminUserId: string;
   let ownEmployeeId: string;
@@ -29,7 +30,11 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
   beforeAll(async () => {
     if (!process.env.DATABASE_URL)
       throw new Error('DATABASE_URL is required for integration tests.');
-    if (!process.env.INTEGRATION_ADMIN_PASSWORD || !process.env.INTEGRATION_EMPLOYEE_PASSWORD) {
+    if (
+      !process.env.INTEGRATION_ADMIN_PASSWORD ||
+      !process.env.INTEGRATION_HR_PASSWORD ||
+      !process.env.INTEGRATION_EMPLOYEE_PASSWORD
+    ) {
       throw new Error('Synthetic integration credentials are required.');
     }
 
@@ -69,6 +74,12 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
     });
     adminUserId = adminUser.id;
 
+    const hrLogin = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ username: 'hr.synthetic', password: process.env.INTEGRATION_HR_PASSWORD })
+      .expect(201);
+    hrToken = hrLogin.body.accessToken as string;
+
     const employeeLogin = await request(app.getHttpServer())
       .post('/api/v1/auth/login')
       .send({ username: 'employee.synthetic', password: process.env.INTEGRATION_EMPLOYEE_PASSWORD })
@@ -90,7 +101,7 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
       prisma.shiftRule.count({
         where: {
           shift: { code: 'CA1' },
-          version: 4,
+          version: 5,
           effectiveFrom: new Date('2026-09-01T00:00:00.000Z'),
           scheduledStartSeconds: 25_200,
           scheduledCompletionSeconds: 68_400,
@@ -101,7 +112,7 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
       prisma.shiftRule.count({
         where: {
           shift: { code: 'CA3' },
-          version: 3,
+          version: 4,
           effectiveFrom: new Date('2026-09-01T00:00:00.000Z'),
           scheduledStartSeconds: 68_400,
           scheduledCompletionSeconds: 111_600,
@@ -422,7 +433,7 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
 
   it('prepares period coverage and calculates with the approved Ca 1 rule without a work schedule', async () => {
     const ca1Rule = await prisma.shiftRule.findFirstOrThrow({
-      where: { shift: { code: 'CA1' }, version: 4 },
+      where: { shift: { code: 'CA1' }, version: 5 },
     });
     const existingSourcePeriod = await prisma.attendancePeriod.findUnique({
       where: { year_month: { year: 2026, month: 9 } },
@@ -468,6 +479,51 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
         rawCells: {},
       },
     });
+    const sundayRestRaw = await prisma.attendanceRaw.create({
+      data: {
+        importId: importRecord.id,
+        sheet: 'Synthetic',
+        rowNo: 6,
+        employeeCode: 'SYN-SUNDAY-REST',
+        employeeName: 'Nhân viên nghỉ Chủ nhật',
+        departmentName: 'Phòng sản xuất mẫu',
+        attendanceDateRaw: '2026-09-06',
+        checkInRaw: null,
+        checkOutRaw: null,
+        shiftNameRaw: null,
+        rawCells: {},
+      },
+    });
+    await prisma.attendanceImportIssue.createMany({
+      data: [
+        {
+          importId: importRecord.id,
+          sheet: 'Synthetic',
+          rowNo: 6,
+          issueCode: 'INVALID_SHIFT',
+          evidence: { blocking: false },
+        },
+        {
+          importId: importRecord.id,
+          sheet: 'Synthetic',
+          rowNo: 6,
+          issueCode: 'NO_ATTENDANCE',
+          evidence: { blocking: false },
+        },
+      ],
+    });
+    await prisma.attendanceException.createMany({
+      data: [
+        { rawId: sundayRestRaw.id, code: 'INVALID_SHIFT', blocking: false },
+        { rawId: sundayRestRaw.id, code: 'NO_ATTENDANCE', blocking: false },
+        {
+          rawId: sundayRestRaw.id,
+          code: 'UNSUPPORTED_SHIFT_FOR_CALCULATION',
+          blocking: true,
+        },
+        { rawId: sundayRestRaw.id, code: 'EMPLOYEE_NOT_FOUND', blocking: true },
+      ],
+    });
 
     try {
       await expect(
@@ -482,9 +538,11 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
         .expect(201);
 
       expect(response.body).toMatchObject({
+        sundayRestRows: 1,
         linkedEmployees: 1,
         missingEmployees: 1,
         missingEmployeeCodes: ['SYN-MISSING-EMPLOYEE'],
+        promotedImportIssues: 0,
         missingSchedules: 0,
         missingTimestampEvidence: 0,
         calculatedRows: 1,
@@ -492,6 +550,24 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
       await expect(prisma.attendanceCalculation.count({ where: { rawId: raw.id } })).resolves.toBe(
         1,
       );
+      await expect(
+        prisma.attendanceException.count({
+          where: { rawId: sundayRestRaw.id, status: 'OPEN' },
+        }),
+      ).resolves.toBe(0);
+      await expect(
+        prisma.attendanceException.count({
+          where: { rawId: sundayRestRaw.id, status: 'RESOLVED' },
+        }),
+      ).resolves.toBe(4);
+      await expect(
+        prisma.exceptionResolution.count({
+          where: { exception: { rawId: sundayRestRaw.id } },
+        }),
+      ).resolves.toBe(4);
+      await expect(
+        prisma.attendanceCalculation.count({ where: { rawId: sundayRestRaw.id } }),
+      ).resolves.toBe(0);
       const repeated = await request(app.getHttpServer())
         .post(`/api/v1/imports/${importRecord.id}/process`)
         .set('Authorization', `Bearer ${adminToken}`)
@@ -517,12 +593,17 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
         }),
       ).resolves.toBe(0);
     } finally {
+      await prisma.exceptionResolution.deleteMany({
+        where: { exception: { rawId: sundayRestRaw.id } },
+      });
       await prisma.attendanceException.deleteMany({
-        where: { rawId: { in: [raw.id, missingRaw.id] } },
+        where: { rawId: { in: [raw.id, missingRaw.id, sundayRestRaw.id] } },
       });
       await prisma.attendanceCalculation.deleteMany({ where: { rawId: raw.id } });
       await prisma.attendanceNormalization.deleteMany({ where: { rawId: raw.id } });
-      await prisma.attendanceRaw.deleteMany({ where: { id: { in: [raw.id, missingRaw.id] } } });
+      await prisma.attendanceRaw.deleteMany({
+        where: { id: { in: [raw.id, missingRaw.id, sundayRestRaw.id] } },
+      });
       await prisma.auditLog.deleteMany({
         where: { entity: 'AttendanceImport', entityId: importRecord.id },
       });
@@ -533,9 +614,128 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
     }
   });
 
+  it('lets HR configure a company holiday and suppresses blank-attendance exceptions', async () => {
+    const holidayDate = '2026-10-02';
+    const importRecord = await prisma.attendanceImport.create({
+      data: {
+        originalName: 'synthetic-company-holiday.xlsx',
+        sha256: '9'.repeat(64),
+        mappingVersion: 'integration-company-holiday',
+        status: 'ACCEPTED',
+        attemptedById: adminUserId,
+        confirmedAt: new Date(),
+      },
+    });
+    const raw = await prisma.attendanceRaw.create({
+      data: {
+        importId: importRecord.id,
+        sheet: 'Synthetic holiday',
+        rowNo: 4,
+        employeeCode: 'SYN-HOLIDAY-REST',
+        employeeName: 'Nhân viên nghỉ lễ synthetic',
+        departmentName: 'Phòng sản xuất mẫu',
+        attendanceDateRaw: holidayDate,
+        checkInRaw: null,
+        checkOutRaw: null,
+        shiftNameRaw: null,
+        rawCells: {},
+      },
+    });
+    await prisma.attendanceImportIssue.createMany({
+      data: [
+        {
+          importId: importRecord.id,
+          sheet: 'Synthetic holiday',
+          rowNo: 4,
+          issueCode: 'INVALID_SHIFT',
+          evidence: { blocking: false },
+        },
+        {
+          importId: importRecord.id,
+          sheet: 'Synthetic holiday',
+          rowNo: 4,
+          issueCode: 'NO_ATTENDANCE',
+          evidence: { blocking: false },
+        },
+      ],
+    });
+    await prisma.attendanceException.createMany({
+      data: [
+        { rawId: raw.id, code: 'INVALID_SHIFT', blocking: false },
+        { rawId: raw.id, code: 'NO_ATTENDANCE', blocking: false },
+      ],
+    });
+    let holidayId = '';
+
+    try {
+      await request(app.getHttpServer())
+        .post('/api/v1/company-holidays')
+        .set('Authorization', `Bearer ${employeeToken}`)
+        .send({ holidayDate, name: 'Ngày nghỉ lễ synthetic' })
+        .expect(403);
+
+      const created = await request(app.getHttpServer())
+        .post('/api/v1/company-holidays')
+        .set('Authorization', `Bearer ${hrToken}`)
+        .send({ holidayDate, name: 'Ngày nghỉ lễ synthetic' })
+        .expect(201);
+      holidayId = created.body.id as string;
+      expect(created.body).toMatchObject({ name: 'Ngày nghỉ lễ synthetic', resolvedExceptions: 2 });
+
+      const listed = await request(app.getHttpServer())
+        .get('/api/v1/company-holidays?month=2026-10')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(listed.body).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: holidayId, name: 'Ngày nghỉ lễ synthetic' }),
+        ]),
+      );
+      await expect(
+        prisma.attendanceException.count({ where: { rawId: raw.id, status: 'OPEN' } }),
+      ).resolves.toBe(0);
+
+      const processed = await request(app.getHttpServer())
+        .post(`/api/v1/imports/${importRecord.id}/process`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(201);
+      expect(processed.body).toMatchObject({
+        rawRows: 1,
+        restRows: 1,
+        sundayRestRows: 0,
+        companyHolidayRestRows: 1,
+        promotedImportIssues: 0,
+        calculatedRows: 0,
+      });
+      await expect(prisma.attendanceCalculation.count({ where: { rawId: raw.id } })).resolves.toBe(
+        0,
+      );
+
+      await request(app.getHttpServer())
+        .delete(`/api/v1/company-holidays/${holidayId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(409);
+    } finally {
+      await prisma.exceptionResolution.deleteMany({ where: { exception: { rawId: raw.id } } });
+      await prisma.attendanceException.deleteMany({ where: { rawId: raw.id } });
+      await prisma.attendanceImportIssue.deleteMany({ where: { importId: importRecord.id } });
+      await prisma.attendanceRaw.deleteMany({ where: { id: raw.id } });
+      await prisma.attendanceImport.delete({ where: { id: importRecord.id } });
+      if (holidayId) await prisma.companyHoliday.deleteMany({ where: { id: holidayId } });
+      await prisma.auditLog.deleteMany({
+        where: {
+          OR: [
+            { entity: 'AttendanceImport', entityId: importRecord.id },
+            ...(holidayId ? [{ entity: 'CompanyHoliday', entityId: holidayId }] : []),
+          ],
+        },
+      });
+    }
+  });
+
   it('does not backdate the approved Ca 1 rule before 01/09/2026', async () => {
     const ca1Rule = await prisma.shiftRule.findFirstOrThrow({
-      where: { shift: { code: 'CA1' }, version: 4 },
+      where: { shift: { code: 'CA1' }, version: 5 },
     });
     const importRecord = await prisma.attendanceImport.create({
       data: {
@@ -668,8 +868,8 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
         presenceSeconds: 43_200,
         breakSeconds: 3_600,
         workedSeconds: 39_600,
-        lateSeconds: 0,
-        earlySeconds: 0,
+        lateCount: 0,
+        earlyCount: 0,
         tier100Seconds: 28_800,
         tier130Seconds: 0,
         tier150Seconds: 10_800,
@@ -677,7 +877,7 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
         tier210Seconds: 0,
         tier230Seconds: 0,
         shiftRule: {
-          version: 4,
+          version: 5,
           scheduledStartSeconds: 25_200,
           scheduledCompletionSeconds: 68_400,
         },
@@ -697,7 +897,7 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
         tier150Seconds: 12_600,
         tier200Seconds: 0,
         tier230Seconds: 0,
-        shiftRule: { version: 4 },
+        shiftRule: { version: 5 },
       });
       expect(at1930.normalization.checkInAt?.toISOString()).toBe('2026-09-18T23:30:00.000Z');
       expect(at1930.normalization.checkOutAt?.toISOString()).toBe('2026-09-19T12:30:00.000Z');
@@ -710,12 +910,12 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
         presenceSeconds: 39_600,
         breakSeconds: 3_600,
         workedSeconds: 36_000,
-        earlySeconds: 2_940,
+        earlyCount: 1,
         tier100Seconds: 28_800,
         tier150Seconds: 7_200,
         tier200Seconds: 0,
         tier230Seconds: 0,
-        shiftRule: { version: 4 },
+        shiftRule: { version: 5 },
       });
       expect(at1811.normalization.checkInAt?.toISOString()).toBe('2026-09-24T23:37:00.000Z');
       expect(at1811.normalization.checkOutAt?.toISOString()).toBe('2026-09-25T11:11:00.000Z');
@@ -804,7 +1004,7 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
         tier200Seconds: 41_400,
         tier210Seconds: 0,
         tier230Seconds: 0,
-        shiftRule: { version: 4 },
+        shiftRule: { version: 5 },
       });
       expect(calculations[1]).toMatchObject({
         workedSeconds: 41_400,
@@ -814,7 +1014,7 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
         tier200Seconds: 0,
         tier210Seconds: 0,
         tier230Seconds: 41_400,
-        shiftRule: { version: 3 },
+        shiftRule: { version: 4 },
       });
       expect(calculations[0]!.normalization.shiftDate?.toISOString().slice(0, 10)).toBe(
         '2026-09-06',
@@ -886,23 +1086,23 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
         presenceSeconds: 43_200,
         breakSeconds: 3_600,
         workedSeconds: 39_600,
-        lateSeconds: 0,
-        earlySeconds: 0,
+        lateCount: 0,
+        earlyCount: 0,
         tier100Seconds: 14_400,
         tier130Seconds: 14_400,
         tier150Seconds: 0,
         tier200Seconds: 0,
         tier210Seconds: 10_800,
         tier230Seconds: 0,
-        shiftRule: { version: 3, scheduledStartSeconds: 68_400 },
+        shiftRule: { version: 4, scheduledStartSeconds: 68_400 },
       });
       expect(first.normalization.checkInAt?.toISOString()).toBe('2026-09-18T11:45:00.000Z');
       expect(first.normalization.checkOutAt?.toISOString()).toBe('2026-09-19T00:15:00.000Z');
 
-      const version4 = await prisma.shiftRule.create({
+      const version5 = await prisma.shiftRule.create({
         data: {
           shiftId: ca3.id,
-          version: 4,
+          version: 5,
           effectiveFrom: new Date('2026-09-01T00:00:00.000Z'),
           scheduledStartSeconds: 68_400,
           scheduledCompletionSeconds: 111_600,
@@ -917,10 +1117,11 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
             countEarlyArrivalSeconds: false,
             postCompletionBlockSeconds: 1_800,
             sundayTierPercentage: 230,
+            lateAfterSeconds: 79_260,
           },
         },
       });
-      extraRuleId = version4.id;
+      extraRuleId = version5.id;
 
       await request(app.getHttpServer())
         .post(`/api/v1/imports/${importRecord.id}/process`)
@@ -1012,8 +1213,8 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
         presenceSeconds: 32_400,
         breakSeconds: 3_600,
         workedSeconds: 28_800,
-        lateSeconds: 0,
-        earlySeconds: 0,
+        lateCount: 0,
+        earlyCount: 0,
         tier100Seconds: 28_800,
         tier130Seconds: 0,
         tier150Seconds: 0,
@@ -1120,6 +1321,155 @@ describe('API + PostgreSQL integration (synthetic dataset)', () => {
         .expect(403);
     } finally {
       await prisma.attendanceCalculation.deleteMany({ where: { rawId: raw.id } });
+      await prisma.attendanceNormalization.deleteMany({ where: { rawId: raw.id } });
+      await prisma.attendanceRaw.deleteMany({ where: { id: raw.id } });
+      await prisma.attendanceImport.deleteMany({ where: { id: importRecord.id } });
+    }
+  });
+
+  it('serves grouped exception workflow reads, preview and fail-closed mutations', async () => {
+    const importRecord = await prisma.attendanceImport.create({
+      data: {
+        originalName: 'synthetic-exceptions.xlsx',
+        sha256: 'e'.repeat(64),
+        mappingVersion: 'synthetic-exception-v1',
+        status: 'ACCEPTED',
+        attemptedById: adminUserId,
+        confirmedAt: new Date(),
+      },
+    });
+    const employee = await prisma.employee.findUniqueOrThrow({ where: { id: ownEmployeeId } });
+    const raw = await prisma.attendanceRaw.create({
+      data: {
+        importId: importRecord.id,
+        employeeId: employee.id,
+        sheet: 'NgoaiLe',
+        rowNo: 1,
+        employeeCode: employee.code,
+        employeeName: employee.name,
+        departmentName: 'Phòng sản xuất mẫu',
+        attendanceDateRaw: '2026-10-03',
+        checkInRaw: '06:37',
+        checkOutRaw: '18:11',
+        shiftNameRaw: 'CA1',
+        rawCells: { source: 'synthetic-exception-integration' },
+      },
+    });
+    await prisma.attendanceNormalization.create({
+      data: {
+        rawId: raw.id,
+        revision: 1,
+        shiftDate: new Date('2026-10-03T00:00:00.000Z'),
+        checkInAt: new Date('2026-10-02T23:37:00.000Z'),
+        checkOutAt: new Date('2026-10-03T11:11:00.000Z'),
+        shiftCode: 'CA1',
+        shiftDateEvidence: { type: 'SOURCE_TIMESTAMP', reference: 'synthetic:exception' },
+        checkOutDateEvidence: { type: 'SOURCE_TIMESTAMP', reference: 'synthetic:exception' },
+        ruleVersion: 'source-shift-v1',
+      },
+    });
+    await prisma.attendanceException.createMany({
+      data: [
+        {
+          rawId: raw.id,
+          code: 'MISSING_CHECKIN',
+          blocking: true,
+          details: { message: 'Synthetic missing check-in' },
+        },
+        {
+          rawId: raw.id,
+          code: 'MULTIPLE_ROWS_SAME_EMPLOYEE_DATE',
+          blocking: true,
+          details: { reason: 'Synthetic multiple rows' },
+        },
+      ],
+    });
+
+    try {
+      const list = await request(app.getHttpServer())
+        .get(`/api/v1/exceptions?month=2026-10&search=${employee.code}&page=1&pageSize=20`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(list.body).toMatchObject({ total: 1, page: 1, pageSize: 20 });
+      expect(list.body.items).toHaveLength(1);
+      expect(list.body.items[0].exceptions).toHaveLength(2);
+      expect(list.body.items[0].exceptions.map((item: { code: string }) => item.code)).toEqual(
+        expect.arrayContaining(['MISSING_CHECKIN', 'MULTIPLE_ROWS_SAME_EMPLOYEE_DATE']),
+      );
+
+      const summary = await request(app.getHttpServer())
+        .get(`/api/v1/exceptions/summary?month=2026-10&search=${employee.code}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(summary.body).toMatchObject({
+        totalRecords: 1,
+        totalCodes: 2,
+        blockingRecords: 1,
+        resolvedRecords: 0,
+        workflowEnabled: false,
+      });
+
+      const detail = await request(app.getHttpServer())
+        .get(`/api/v1/exceptions/${raw.id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(detail.body).toMatchObject({
+        id: raw.id,
+        employee: { code: employee.code },
+        raw: { fileName: 'synthetic-exceptions.xlsx', rowNo: 1 },
+        version: 1,
+      });
+
+      const preview = await request(app.getHttpServer())
+        .post(`/api/v1/exceptions/${raw.id}/preview`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          shiftCode: 'CA1',
+          shiftDate: '2026-10-03',
+          checkInAt: '2026-10-03T06:37:00+07:00',
+          checkOutAt: '2026-10-03T18:11:00+07:00',
+        })
+        .expect(201);
+      expect(preview.body).toMatchObject({
+        persisted: false,
+        inputVersion: 1,
+        preview: { status: 'VALID', calculation: { workedSeconds: 36_000 } },
+      });
+
+      const exportResponse = await request(app.getHttpServer())
+        .get(`/api/v1/exceptions/export?month=2026-10&search=${employee.code}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .buffer(true)
+        .parse(binaryParser)
+        .expect(200);
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(exportResponse.body as never);
+      expect(workbook.getWorksheet('Ngoại lệ')?.getCell('B2').value).toBe(employee.code);
+      expect(String(workbook.getWorksheet('Ngoại lệ')?.getCell('I2').value)).toContain(
+        'MISSING_CHECKIN',
+      );
+
+      const firstException = await prisma.attendanceException.findFirstOrThrow({
+        where: { rawId: raw.id },
+      });
+      await request(app.getHttpServer())
+        .post(`/api/v1/exceptions/${firstException.id}/resolve`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ action: 'REVIEWED_NO_CHANGE', reason: 'Synthetic fail-closed integration test' })
+        .expect(409);
+      await expect(
+        prisma.attendanceException.count({ where: { rawId: raw.id, status: 'OPEN' } }),
+      ).resolves.toBe(2);
+
+      await request(app.getHttpServer())
+        .get('/api/v1/exceptions')
+        .set('Authorization', `Bearer ${employeeToken}`)
+        .expect(403);
+    } finally {
+      await prisma.exceptionResolution.deleteMany({
+        where: { exception: { rawId: raw.id } },
+      });
+      await prisma.attendanceException.deleteMany({ where: { rawId: raw.id } });
       await prisma.attendanceNormalization.deleteMany({ where: { rawId: raw.id } });
       await prisma.attendanceRaw.deleteMany({ where: { id: raw.id } });
       await prisma.attendanceImport.deleteMany({ where: { id: importRecord.id } });

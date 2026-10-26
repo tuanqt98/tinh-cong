@@ -32,24 +32,21 @@ describe('Ca 1', () => {
       workedSeconds: 39_600,
       tier100Seconds: 28_800,
       tier150Seconds: 10_800,
-      lateSeconds: 0,
-      earlySeconds: 0,
+      lateCount: 0,
+      earlyCount: 0,
     });
   });
 
   it('T02 tính đi muộn độc lập', () => {
-    expect(calculation({ checkInAt: '2026-10-01T07:30:00+07:00' })).toMatchObject({
-      workedSeconds: 37_800,
-      lateSeconds: 1_800,
-      earlySeconds: 0,
-    });
+    expect(calculation({ checkInAt: '2026-10-01T08:01:00+07:00' })).toMatchObject({ lateCount: 0 });
+    expect(calculation({ checkInAt: '2026-10-01T08:01:01+07:00' })).toMatchObject({ lateCount: 1 });
   });
 
   it('T03 tính về sớm độc lập', () => {
     expect(calculation({ checkOutAt: '2026-10-01T18:30:00+07:00' })).toMatchObject({
       workedSeconds: 37_800,
-      lateSeconds: 0,
-      earlySeconds: 1_800,
+      lateCount: 0,
+      earlyCount: 1,
     });
   });
 
@@ -63,8 +60,8 @@ describe('Ca 1', () => {
       workedSeconds: 39_600,
       tier100Seconds: 28_800,
       tier150Seconds: 10_800,
-      lateSeconds: 1_800,
-      earlySeconds: 0,
+      lateCount: 0,
+      earlyCount: 0,
     });
   });
 
@@ -72,7 +69,7 @@ describe('Ca 1', () => {
     expect(calculation({ checkOutAt: '2026-10-01T11:00:00+07:00' })).toMatchObject({
       breakSeconds: 0,
       workedSeconds: 14_400,
-      earlySeconds: 25_200,
+      earlyCount: 1,
     });
   });
 
@@ -80,7 +77,7 @@ describe('Ca 1', () => {
     expect(calculation({ checkOutAt: '2026-10-01T12:30:00+07:00' })).toMatchObject({
       breakSeconds: 1_800,
       workedSeconds: 18_000,
-      earlySeconds: 21_600,
+      earlyCount: 1,
     });
   });
 
@@ -88,7 +85,7 @@ describe('Ca 1', () => {
     expect(calculation({ checkInAt: '2026-10-01T07:00:01+07:00' })).toMatchObject({
       workedSeconds: 39_599,
       tier150Seconds: 10_799,
-      lateSeconds: 1,
+      lateCount: 0,
     });
   });
 
@@ -103,8 +100,8 @@ describe('Ca 1', () => {
       workedSeconds: 39_600,
       tier100Seconds: 28_800,
       tier150Seconds: 10_800,
-      lateSeconds: 0,
-      earlySeconds: 0,
+      lateCount: 0,
+      earlyCount: 0,
     });
 
     expect(
@@ -134,8 +131,8 @@ describe('Ca 1', () => {
       workedSeconds: 36_000,
       tier100Seconds: 28_800,
       tier150Seconds: 7_200,
-      lateSeconds: 0,
-      earlySeconds: 2_940,
+      lateCount: 0,
+      earlyCount: 1,
     });
   });
 
@@ -159,6 +156,7 @@ describe('Ca 1', () => {
           checkOutBlockSeconds: null,
           postCompletionBlockSeconds: null,
           sundayTierPercentage: null,
+          lateAfterSeconds: 28_800,
         },
       },
     );
@@ -168,8 +166,8 @@ describe('Ca 1', () => {
       workedSeconds: 28_800,
       tier100Seconds: 28_800,
       tier150Seconds: 0,
-      lateSeconds: 0,
-      earlySeconds: 0,
+      lateCount: 0,
+      earlyCount: 0,
     });
   });
 
@@ -207,8 +205,8 @@ describe('Ca 3', () => {
       tier100Seconds: 14_400,
       tier130Seconds: 14_400,
       tier210Seconds: 10_800,
-      lateSeconds: 0,
-      earlySeconds: 0,
+      lateCount: 0,
+      earlyCount: 0,
     });
   });
 
@@ -216,20 +214,27 @@ describe('Ca 3', () => {
     expect(
       calculation({
         shiftCode: 'CA3',
-        checkInAt: '2026-10-01T19:15:00+07:00',
+        checkInAt: '2026-10-01T22:01:00+07:00',
         checkOutAt: '2026-10-02T07:00:00+07:00',
       }),
-    ).toMatchObject({ workedSeconds: 38_700, lateSeconds: 900, earlySeconds: 0 });
+    ).toMatchObject({ lateCount: 0, earlyCount: 0 });
+    expect(
+      calculation({
+        shiftCode: 'CA3',
+        checkInAt: '2026-10-01T22:01:01+07:00',
+        checkOutAt: '2026-10-02T07:00:00+07:00',
+      }),
+    ).toMatchObject({ lateCount: 1, earlyCount: 0 });
   });
 
   it('T09 tính đi muộn và về sớm độc lập', () => {
     expect(
       calculation({
         shiftCode: 'CA3',
-        checkInAt: '2026-10-01T19:15:00+07:00',
+        checkInAt: '2026-10-01T22:15:00+07:00',
         checkOutAt: '2026-10-02T06:30:00+07:00',
       }),
-    ).toMatchObject({ workedSeconds: 36_900, lateSeconds: 900, earlySeconds: 1_800 });
+    ).toMatchObject({ lateCount: 1, earlyCount: 1 });
   });
 
   it('T10 phân bổ tăng ca 210%', () => {
@@ -258,8 +263,8 @@ describe('Ca 3', () => {
       presenceSeconds: 43_200,
       workedSeconds: 39_600,
       tier210Seconds: 10_800,
-      lateSeconds: 0,
-      earlySeconds: 0,
+      lateCount: 0,
+      earlyCount: 0,
     });
 
     expect(
@@ -286,7 +291,7 @@ describe('Ca 3', () => {
         checkInAt: '2026-10-01T19:00:00+07:00',
         checkOutAt: '2026-10-02T00:30:00+07:00',
       }),
-    ).toMatchObject({ breakSeconds: 1_800, workedSeconds: 18_000, earlySeconds: 21_600 });
+    ).toMatchObject({ breakSeconds: 1_800, workedSeconds: 18_000, earlyCount: 1 });
   });
 
   it('T26 gắn ca ngày trước cho check-in sau nửa đêm khi có lịch', () => {
@@ -302,8 +307,8 @@ describe('Ca 3', () => {
       workedSeconds: 21_600,
       tier100Seconds: 14_400,
       tier130Seconds: 7_200,
-      lateSeconds: 19_800,
-      earlySeconds: 0,
+      lateCount: 1,
+      earlyCount: 0,
     });
   });
 

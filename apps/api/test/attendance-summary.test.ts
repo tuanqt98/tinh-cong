@@ -27,8 +27,8 @@ function createPrisma() {
       tier200Seconds: 0,
       tier210Seconds: 0,
       tier230Seconds: 0,
-      lateSeconds: 300,
-      earlySeconds: 0,
+      lateCount: 1,
+      earlyCount: 0,
       raw: { employeeId: 'employee-1', departmentName: 'Sản xuất trong kỳ' },
       normalization: { shiftDate: new Date('2026-10-01T00:00:00.000Z'), shiftCode: 'CA1' },
     },
@@ -44,8 +44,8 @@ function createPrisma() {
       tier200Seconds: 0,
       tier210Seconds: 0,
       tier230Seconds: 0,
-      lateSeconds: 0,
-      earlySeconds: 0,
+      lateCount: 0,
+      earlyCount: 0,
       raw: { employeeId: 'employee-1', departmentName: 'Phòng cũ' },
       normalization: { shiftDate: new Date('2026-10-01T00:00:00.000Z'), shiftCode: 'CA1' },
     },
@@ -61,8 +61,8 @@ function createPrisma() {
       tier200Seconds: null,
       tier210Seconds: null,
       tier230Seconds: null,
-      lateSeconds: null,
-      earlySeconds: null,
+      lateCount: null,
+      earlyCount: null,
       raw: { employeeId: 'employee-2', departmentName: 'Kỹ thuật' },
       normalization: { shiftDate: new Date('2026-10-02T00:00:00.000Z'), shiftCode: 'CA1' },
     },
@@ -130,6 +130,8 @@ describe('attendance summary', () => {
       tier150Seconds: 1_200,
       tier200Seconds: 0,
       tier230Seconds: 0,
+      lateCount: 1,
+      earlyCount: 0,
       exceptionCount: 1,
     });
     expect(result.items[0]).toMatchObject({
@@ -169,6 +171,8 @@ describe('attendance summary', () => {
     expect(sheet?.getCell('E11').numFmt).toBe('[h]:mm:ss');
     expect(sheet?.getCell('I8').value).toBe('Giờ 200%');
     expect(sheet?.getCell('K8').value).toBe('Giờ 230%');
+    expect(sheet?.getCell('L8').value).toBe('Lượt đi muộn');
+    expect(sheet?.getCell('L9').value).toBe(1);
   });
 
   it('tìm tên không phân biệt dấu tiếng Việt', async () => {

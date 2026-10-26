@@ -70,8 +70,8 @@ interface SummaryRow {
   tier200Seconds: number;
   tier210Seconds: number;
   tier230Seconds: number;
-  lateSeconds: number;
-  earlySeconds: number;
+  lateCount: number;
+  earlyCount: number;
   workingDays: number | null;
   attendanceDays: number;
   exceptionCount: number;
@@ -90,8 +90,8 @@ interface SummaryTotals {
   tier200Seconds: number;
   tier210Seconds: number;
   tier230Seconds: number;
-  lateSeconds: number;
-  earlySeconds: number;
+  lateCount: number;
+  earlyCount: number;
   attendanceDays: number;
   exceptionCount: number;
 }
@@ -661,8 +661,8 @@ export function AttendanceSummaryPage() {
                   <th className="bg-sky-50 px-3 py-3 text-center text-sky-700">Giờ 200%</th>
                   <th className="bg-rose-50 px-3 py-3 text-center text-rose-700">Giờ 210%</th>
                   <th className="bg-pink-50 px-3 py-3 text-center text-pink-700">Giờ 230%</th>
-                  <th className="bg-red-50 px-3 py-3 text-center text-red-700">Đi muộn</th>
-                  <th className="bg-amber-50 px-3 py-3 text-center text-amber-700">Về sớm</th>
+                  <th className="bg-red-50 px-3 py-3 text-center text-red-700">Lượt đi muộn</th>
+                  <th className="bg-amber-50 px-3 py-3 text-center text-amber-700">Lượt về sớm</th>
                   <th className="px-3 py-3 text-center">Số ngày làm việc</th>
                   <th className="px-3 py-3 text-center">
                     <SortButton
@@ -776,10 +776,10 @@ export function AttendanceSummaryPage() {
                         {formatDuration(row.tier230Seconds)}
                       </td>
                       <td className="bg-red-50/50 px-3 py-3 text-center tabular-nums text-red-700">
-                        {formatDuration(row.lateSeconds)}
+                        {row.lateCount}
                       </td>
                       <td className="bg-amber-50/50 px-3 py-3 text-center tabular-nums text-amber-700">
-                        {formatDuration(row.earlySeconds)}
+                        {row.earlyCount}
                       </td>
                       <td
                         className="px-3 py-3 text-center"
@@ -840,10 +840,10 @@ export function AttendanceSummaryPage() {
                     {formatDuration(totals?.tier230Seconds ?? 0)}
                   </td>
                   <td className="bg-red-50 px-3 py-3 text-center text-red-700">
-                    {formatDuration(totals?.lateSeconds ?? 0)}
+                    {totals?.lateCount ?? 0}
                   </td>
                   <td className="bg-amber-50 px-3 py-3 text-center text-amber-700">
-                    {formatDuration(totals?.earlySeconds ?? 0)}
+                    {totals?.earlyCount ?? 0}
                   </td>
                   <td className="px-3 py-3 text-center">N/A</td>
                   <td className="px-3 py-3 text-center">{totals?.attendanceDays ?? 0}</td>
@@ -948,8 +948,8 @@ interface AttendanceDetailRow {
   tier200Seconds: number | null;
   tier210Seconds: number | null;
   tier230Seconds: number | null;
-  lateSeconds: number | null;
-  earlySeconds: number | null;
+  lateCount: number | null;
+  earlyCount: number | null;
   exceptions: Array<{ id: string; code: string; blocking: boolean; status: string }>;
   source: {
     employeeCode: string;
@@ -1320,18 +1320,18 @@ export function AttendanceDetailPage() {
                     note="giờ"
                   />
                   <DetailMetric
-                    label="Đi muộn"
-                    value={detailHours(detail.data.totals.lateSeconds, 1)}
+                    label="Lượt đi muộn"
+                    value={String(detail.data.totals.lateCount)}
                     icon={Timer}
                     tone="rose"
-                    note="giờ"
+                    note="lượt"
                   />
                   <DetailMetric
-                    label="Về sớm"
-                    value={detailHours(detail.data.totals.earlySeconds, 1)}
+                    label="Lượt về sớm"
+                    value={String(detail.data.totals.earlyCount)}
                     icon={Timer}
                     tone="orange"
-                    note="giờ"
+                    note="lượt"
                   />
                   <DetailMetric
                     label="Số ngày làm việc"
@@ -1409,8 +1409,8 @@ export function AttendanceDetailPage() {
                               '200%',
                               '210%',
                               '230%',
-                              'Đi muộn',
-                              'Về sớm',
+                              'Lượt đi muộn',
+                              'Lượt về sớm',
                               'Trạng thái',
                               'Ghi chú',
                             ].map((header) => (
@@ -1468,8 +1468,6 @@ export function AttendanceDetailPage() {
                                 row.tier200Seconds,
                                 row.tier210Seconds,
                                 row.tier230Seconds,
-                                row.lateSeconds,
-                                row.earlySeconds,
                               ].map((value, valueIndex) => (
                                 <td
                                   key={valueIndex}
@@ -1485,6 +1483,12 @@ export function AttendanceDetailPage() {
                                   {detailHours(value)}
                                 </td>
                               ))}
+                              <td className="px-2.5 py-2.5 text-center tabular-nums text-rose-600">
+                                {row.lateCount ?? 0}
+                              </td>
+                              <td className="px-2.5 py-2.5 text-center tabular-nums text-orange-600">
+                                {row.earlyCount ?? 0}
+                              </td>
                               <td className="px-2.5 py-2.5 text-center">
                                 <span
                                   className={cn(
@@ -1521,13 +1525,17 @@ export function AttendanceDetailPage() {
                               detail.data.totals.tier200Seconds,
                               detail.data.totals.tier210Seconds,
                               detail.data.totals.tier230Seconds,
-                              detail.data.totals.lateSeconds,
-                              detail.data.totals.earlySeconds,
                             ].map((value, index) => (
                               <td key={index} className="px-2.5 py-3 text-center tabular-nums">
                                 {detailHours(value)}
                               </td>
                             ))}
+                            <td className="px-2.5 py-3 text-center tabular-nums text-rose-600">
+                              {detail.data.totals.lateCount}
+                            </td>
+                            <td className="px-2.5 py-3 text-center tabular-nums text-orange-600">
+                              {detail.data.totals.earlyCount}
+                            </td>
                             <td colSpan={2} />
                           </tr>
                         </tfoot>
@@ -1818,13 +1826,13 @@ export function AttendanceDetailPage() {
                   ['Giờ 200%', detail.data.totals.tier200Seconds, 'text-sky-600'],
                   ['Giờ 210%', detail.data.totals.tier210Seconds, 'text-rose-600'],
                   ['Giờ 230%', detail.data.totals.tier230Seconds, 'text-pink-600'],
-                  ['Đi muộn', detail.data.totals.lateSeconds, 'text-rose-600'],
-                  ['Về sớm', detail.data.totals.earlySeconds, 'text-orange-600'],
-                ].map(([label, value, color]) => (
+                  ['Lượt đi muộn', detail.data.totals.lateCount, 'text-rose-600', true],
+                  ['Lượt về sớm', detail.data.totals.earlyCount, 'text-orange-600', true],
+                ].map(([label, value, color, isCount]) => (
                   <div key={String(label)} className="flex items-center justify-between gap-2">
                     <dt className={cn('font-medium', color as string)}>{label}</dt>
                     <dd className="tabular-nums text-navy">
-                      {detailHours(value as number, 1)} giờ
+                      {isCount ? `${value} lượt` : `${detailHours(value as number, 1)} giờ`}
                     </dd>
                   </div>
                 ))}

@@ -22,12 +22,16 @@ import type { AuthenticatedUser } from '../auth/types.js';
 import {
   CalculatePreviewDto,
   AttendanceSummaryQueryDto,
+  CompanyHolidayQueryDto,
   ConfirmEmployeeImportDto,
+  CreateCompanyHolidayDto,
   CreateDepartmentDto,
   CreateEmployeeDto,
   DeactivateEmployeeDto,
   EmployeeQueryDto,
   EmployeeAttendanceQueryDto,
+  ExceptionPreviewDto,
+  ExceptionQueryDto,
   CreatePeriodDto,
   CreateShiftDto,
   FeedbackDto,
@@ -179,8 +183,55 @@ export class CoreController {
 
   @Roles(RoleCode.ADMIN, RoleCode.HR)
   @Get('exceptions')
-  listExceptions(@CurrentUser() user: AuthenticatedUser, @Query() query: PaginationDto) {
+  listExceptions(@CurrentUser() user: AuthenticatedUser, @Query() query: ExceptionQueryDto) {
     return this.core.listExceptions(user, query);
+  }
+
+  @Roles(RoleCode.ADMIN, RoleCode.HR)
+  @Get('exceptions/summary')
+  exceptionSummary(@CurrentUser() user: AuthenticatedUser, @Query() query: ExceptionQueryDto) {
+    return this.core.exceptionSummary(user, query);
+  }
+
+  @Roles(RoleCode.ADMIN, RoleCode.HR)
+  @Get('exceptions/export')
+  async exportExceptions(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ExceptionQueryDto,
+  ) {
+    const buffer = await this.core.exportExceptionsExcel(user, query);
+    return new StreamableFile(buffer, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename="ngoai-le-${new Date().toISOString().slice(0, 10)}.xlsx"`,
+    });
+  }
+
+  @Roles(RoleCode.ADMIN, RoleCode.HR)
+  @Get('exceptions/:id/history')
+  async exceptionHistory(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return (await this.core.getExceptionDetail(user, id)).history;
+  }
+
+  @Roles(RoleCode.ADMIN, RoleCode.HR)
+  @Get('exceptions/:id')
+  getExceptionDetail(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.core.getExceptionDetail(user, id);
+  }
+
+  @Roles(RoleCode.ADMIN, RoleCode.HR)
+  @Post('exceptions/:id/preview')
+  previewException(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ExceptionPreviewDto,
+  ) {
+    return this.core.previewException(user, id, dto);
   }
 
   @Roles(RoleCode.ADMIN, RoleCode.HR)
@@ -203,6 +254,30 @@ export class CoreController {
   @Post('shifts')
   createShift(@Body() dto: CreateShiftDto) {
     return this.core.createShift(dto);
+  }
+
+  @Roles(RoleCode.ADMIN, RoleCode.HR, RoleCode.MANAGER)
+  @Get('company-holidays')
+  listCompanyHolidays(@Query() query: CompanyHolidayQueryDto) {
+    return this.core.listCompanyHolidays(query);
+  }
+
+  @Roles(RoleCode.ADMIN, RoleCode.HR)
+  @Post('company-holidays')
+  createCompanyHoliday(
+    @Body() dto: CreateCompanyHolidayDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.core.createCompanyHoliday(dto, user);
+  }
+
+  @Roles(RoleCode.ADMIN, RoleCode.HR)
+  @Delete('company-holidays/:id')
+  deleteCompanyHoliday(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.core.deleteCompanyHoliday(id, user);
   }
 
   @Roles(RoleCode.ADMIN, RoleCode.HR)

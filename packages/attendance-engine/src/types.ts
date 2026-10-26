@@ -65,14 +65,15 @@ export interface EngineShiftRule {
   checkOutBlockSeconds: number | null;
   postCompletionBlockSeconds: number | null;
   sundayTierPercentage: 200 | 230 | null;
+  lateAfterSeconds: number;
 }
 
 export interface AttendanceCalculation {
   presenceSeconds: number;
   breakSeconds: number;
   workedSeconds: number;
-  lateSeconds: number;
-  earlySeconds: number;
+  lateCount: 0 | 1;
+  earlyCount: 0 | 1;
   tier100Seconds: number;
   tier130Seconds: number;
   tier150Seconds: number;
@@ -89,7 +90,7 @@ export interface AttendanceResult {
   checkOutEpochSeconds: number | null;
   exceptions: AttendanceException[];
   calculation: AttendanceCalculation | null;
-  ruleVersion: '2026-10-24-dec011';
+  ruleVersion: '2026-10-26-dec014';
 }
 
 export interface DuplicateCandidate {

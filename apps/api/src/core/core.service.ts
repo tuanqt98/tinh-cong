@@ -25,12 +25,16 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import type {
   AttendanceSummaryQueryDto,
   CalculatePreviewDto,
+  CompanyHolidayQueryDto,
   ConfirmEmployeeImportDto,
+  CreateCompanyHolidayDto,
   CreateDepartmentDto,
   CreateEmployeeDto,
   EmployeeQueryDto,
   CreatePeriodDto,
   CreateShiftDto,
+  ExceptionPreviewDto,
+  ExceptionQueryDto,
   FeedbackDto,
   PaginationDto,
   ResolveExceptionDto,
@@ -46,6 +50,78 @@ const NEXT_STATUS: Partial<Record<PeriodStatus, PeriodStatus>> = {
 };
 
 type AttendanceProcessingStatus = 'VALID' | 'NEEDS_REVIEW' | 'NO_DATA';
+type ExceptionSeverity = 'BLOCKING' | 'WARNING' | 'INFO';
+
+const EXCEPTION_DESCRIPTIONS: Record<string, string> = {
+  MISSING_CHECKIN: 'Thiếu giờ vào',
+  MISSING_CHECKOUT: 'Thiếu giờ ra',
+  INVALID_SHIFT: 'Ca làm việc không hợp lệ',
+  INVALID_SHIFT_DATE: 'Ngày ca không hợp lệ',
+  INVALID_CHECKIN_TIMESTAMP: 'Timestamp giờ vào không hợp lệ',
+  INVALID_CHECKOUT_TIMESTAMP: 'Timestamp giờ ra không hợp lệ',
+  UNRESOLVED_SHIFT_DATE: 'Chưa đủ căn cứ xác định ngày ca',
+  UNRESOLVED_CHECKOUT_DATE: 'Chưa đủ căn cứ xác định ngày giờ ra',
+  DUPLICATE: 'Dữ liệu trùng',
+  MULTIPLE_ROWS_SAME_EMPLOYEE_DATE: 'Nhiều dòng cùng nhân viên/ngày',
+  MULTIPLE_ROWS_SAME_EMPLOYEE_SHIFT_DATE: 'Nhiều dòng cùng nhân viên/ngày/ca',
+  EQUAL_CHECK_TIMES: 'Giờ vào bằng giờ ra',
+  NEGATIVE_DURATION: 'Thời lượng hiện diện âm',
+  EXCESSIVE_DURATION: 'Hiện diện vượt ngưỡng 16 giờ',
+  CHECKOUT_BEFORE_SHIFT_START: 'Giờ ra trước mốc bắt đầu ca',
+  NO_ATTENDANCE: 'Không có dữ liệu chấm công',
+  EMPLOYEE_NOT_FOUND: 'Không tìm thấy hồ sơ nhân viên',
+  SHIFT_RULE_NOT_FOUND: 'Không tìm thấy quy tắc ca có hiệu lực',
+};
+
+interface ExceptionListRaw {
+  id: string;
+  employeeCode: string;
+  employeeName: string;
+  departmentName: string;
+  attendanceDateRaw: string | null;
+  checkInRaw: string | null;
+  checkOutRaw: string | null;
+  shiftNameRaw: string | null;
+  employee: {
+    id: string;
+    code: string;
+    name: string;
+    departmentId: string | null;
+    department: { id: string; code: string; name: string } | null;
+  } | null;
+  normalizations: Array<{
+    revision: number;
+    shiftDate: Date | null;
+    checkInAt: Date | null;
+    checkOutAt: Date | null;
+    shiftCode: string | null;
+    ruleVersion: string;
+  }>;
+  calculations: Array<{
+    id: string;
+    revision: number;
+    status: 'VALID' | 'NEEDS_REVIEW';
+    workedSeconds: number | null;
+    lateCount: number | null;
+    earlyCount: number | null;
+    period: { id: string; year: number; month: number; status: PeriodStatus; version: number };
+  }>;
+  exceptions: Array<{
+    id: string;
+    code: string;
+    blocking: boolean;
+    status: ExceptionStatus;
+    details: Prisma.JsonValue | null;
+    createdAt: Date;
+    updatedAt: Date;
+    resolutions: Array<{
+      action: string;
+      reason: string;
+      createdAt: Date;
+      actor: { id: string; username: string };
+    }>;
+  }>;
+}
 
 export interface AttendanceSummaryRow {
   employeeId: string;
@@ -59,8 +135,8 @@ export interface AttendanceSummaryRow {
   tier200Seconds: number;
   tier210Seconds: number;
   tier230Seconds: number;
-  lateSeconds: number;
-  earlySeconds: number;
+  lateCount: number;
+  earlyCount: number;
   workingDays: number | null;
   attendanceDays: number;
   exceptionCount: number;
@@ -79,8 +155,8 @@ export interface AttendanceSummaryTotals {
   tier200Seconds: number;
   tier210Seconds: number;
   tier230Seconds: number;
-  lateSeconds: number;
-  earlySeconds: number;
+  lateCount: number;
+  earlyCount: number;
   attendanceDays: number;
   exceptionCount: number;
 }
@@ -93,8 +169,8 @@ export interface AttendanceDetailTotals {
   tier200Seconds: number;
   tier210Seconds: number;
   tier230Seconds: number;
-  lateSeconds: number;
-  earlySeconds: number;
+  lateCount: number;
+  earlyCount: number;
   attendanceDays: number;
   exceptionCount: number;
 }
@@ -705,23 +781,389 @@ export class CoreService {
     );
   }
 
-  async listExceptions(user: AuthenticatedUser, query: PaginationDto) {
-    const where: Prisma.AttendanceExceptionWhereInput = user.roles.includes(RoleCode.ADMIN)
-      ? {}
-      : { raw: { employee: await this.employeeScope(user) } };
-    return this.prisma.attendanceException.findMany({
+  async listExceptions(user: AuthenticatedUser, query: ExceptionQueryDto) {
+    const where = await this.exceptionRawWhere(user, query);
+    // Query parameters arrive as strings over HTTP. Keep the service boundary
+    // defensive as well as relying on ValidationPipe/class-transformer so
+    // Prisma never receives a string for skip/take.
+    const page = Number(query.page || 1);
+    const pageSize = Number(query.pageSize || 20);
+    const [total, raws] = await this.prisma.$transaction([
+      this.prisma.attendanceRaw.count({ where }),
+      this.prisma.attendanceRaw.findMany({
+        where,
+        select: {
+          id: true,
+          employeeCode: true,
+          employeeName: true,
+          departmentName: true,
+          attendanceDateRaw: true,
+          checkInRaw: true,
+          checkOutRaw: true,
+          shiftNameRaw: true,
+          employee: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              departmentId: true,
+              department: { select: { id: true, code: true, name: true } },
+            },
+          },
+          normalizations: {
+            orderBy: { revision: 'desc' },
+            take: 1,
+            select: {
+              revision: true,
+              shiftDate: true,
+              checkInAt: true,
+              checkOutAt: true,
+              shiftCode: true,
+              ruleVersion: true,
+            },
+          },
+          calculations: {
+            orderBy: { revision: 'desc' },
+            take: 1,
+            select: {
+              id: true,
+              revision: true,
+              status: true,
+              workedSeconds: true,
+              lateCount: true,
+              earlyCount: true,
+              period: {
+                select: { id: true, year: true, month: true, status: true, version: true },
+              },
+            },
+          },
+          exceptions: {
+            orderBy: [{ status: 'asc' }, { createdAt: 'asc' }],
+            select: {
+              id: true,
+              code: true,
+              blocking: true,
+              status: true,
+              details: true,
+              createdAt: true,
+              updatedAt: true,
+              resolutions: {
+                orderBy: { createdAt: 'desc' },
+                take: 1,
+                select: {
+                  action: true,
+                  reason: true,
+                  createdAt: true,
+                  actor: { select: { id: true, username: true } },
+                },
+              },
+            },
+          },
+        },
+        orderBy: [{ attendanceDateRaw: 'desc' }, { employeeCode: 'asc' }, { rowNo: 'asc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ]);
+
+    return {
+      items: raws.map((raw) => this.exceptionListItem(raw)),
+      total,
+      page,
+      pageSize,
+    };
+  }
+
+  async exceptionSummary(user: AuthenticatedUser, query: ExceptionQueryDto) {
+    const where = await this.exceptionRawWhere(user, query, false);
+    const rows = await this.prisma.attendanceRaw.findMany({
       where,
-      include: {
-        raw: { select: { employeeCode: true, sheet: true, rowNo: true } },
-        resolutions: { orderBy: { createdAt: 'desc' } },
+      select: {
+        exceptions: { select: { blocking: true, status: true } },
       },
-      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
-      skip: (query.page - 1) * query.pageSize,
-      take: query.pageSize,
     });
+    const blockingRecords = rows.filter((row) =>
+      row.exceptions.some((item) => item.status === ExceptionStatus.OPEN && item.blocking),
+    ).length;
+    const warningRecords = rows.filter((row) => {
+      const open = row.exceptions.filter((item) => item.status === ExceptionStatus.OPEN);
+      return open.length > 0 && open.every((item) => !item.blocking);
+    }).length;
+    const resolvedRecords = rows.filter((row) =>
+      row.exceptions.every((item) => item.status === ExceptionStatus.RESOLVED),
+    ).length;
+    return {
+      totalRecords: rows.length,
+      totalCodes: rows.reduce((sum, row) => sum + row.exceptions.length, 0),
+      blockingRecords,
+      warningRecords,
+      infoRecords: 0,
+      resolvedRecords,
+      openRecords: rows.length - resolvedRecords,
+      workflowEnabled: this.config.get('WORKFLOW_ENABLED') === 'true',
+    };
+  }
+
+  async getExceptionDetail(user: AuthenticatedUser, rawId: string) {
+    const employee = await this.employeeScope(user);
+    const raw = await this.prisma.attendanceRaw.findFirst({
+      where: {
+        id: rawId,
+        exceptions: { some: {} },
+        ...(user.roles.includes(RoleCode.ADMIN) ? {} : { employee }),
+      },
+      include: {
+        import: {
+          select: { id: true, originalName: true, mappingVersion: true, attemptedAt: true },
+        },
+        employee: {
+          include: { department: { select: { id: true, code: true, name: true } } },
+        },
+        normalizations: { orderBy: { revision: 'desc' } },
+        calculations: {
+          orderBy: { revision: 'desc' },
+          include: {
+            period: {
+              select: {
+                id: true,
+                year: true,
+                month: true,
+                status: true,
+                version: true,
+                lockedAt: true,
+                publishedAt: true,
+              },
+            },
+            shiftRule: { include: { shift: { select: { code: true, name: true } } } },
+          },
+        },
+        exceptions: {
+          orderBy: [{ status: 'asc' }, { createdAt: 'asc' }],
+          include: {
+            resolutions: {
+              orderBy: { createdAt: 'desc' },
+              include: { actor: { select: { id: true, username: true } } },
+            },
+          },
+        },
+        adjustments: {
+          orderBy: { revision: 'desc' },
+          include: { actor: { select: { id: true, username: true } } },
+        },
+      },
+    });
+    if (!raw) throw new NotFoundException('Không tìm thấy bản ghi ngoại lệ trong phạm vi quyền.');
+
+    const entityIds = [raw.id, ...raw.exceptions.map((item) => item.id)];
+    const audits = await this.prisma.auditLog.findMany({
+      where: { entityId: { in: entityIds } },
+      orderBy: { createdAt: 'desc' },
+      include: { actor: { select: { id: true, username: true } } },
+    });
+    const latestNormalization = raw.normalizations[0] ?? null;
+    const latestCalculation = raw.calculations[0] ?? null;
+    const status = raw.exceptions.some((item) => item.status === ExceptionStatus.OPEN)
+      ? ExceptionStatus.OPEN
+      : ExceptionStatus.RESOLVED;
+    const history = [
+      ...raw.adjustments.map((item) => ({
+        id: item.id,
+        type: 'ADJUSTMENT' as const,
+        action: 'ATTENDANCE_ADJUSTED',
+        actor: item.actor,
+        reason: item.reason,
+        before: item.before,
+        after: item.after,
+        createdAt: item.createdAt,
+      })),
+      ...raw.exceptions.flatMap((item) =>
+        item.resolutions.map((resolution) => ({
+          id: resolution.id,
+          type: 'RESOLUTION' as const,
+          action: resolution.action,
+          actor: resolution.actor,
+          reason: resolution.reason,
+          before: resolution.before,
+          after: resolution.after,
+          createdAt: resolution.createdAt,
+        })),
+      ),
+      ...audits.map((item) => ({
+        id: item.id,
+        type: 'AUDIT' as const,
+        action: item.action,
+        actor: item.actor,
+        reason: item.reason,
+        before: item.before,
+        after: item.after,
+        createdAt: item.createdAt,
+      })),
+    ].sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+
+    return {
+      id: raw.id,
+      status,
+      severity: this.exceptionSeverity(raw.exceptions),
+      workflowEnabled: this.config.get('WORKFLOW_ENABLED') === 'true',
+      employee: raw.employee
+        ? {
+            id: raw.employee.id,
+            code: raw.employee.code,
+            name: raw.employee.name,
+            position: raw.employee.position,
+            department: raw.employee.department,
+          }
+        : {
+            id: null,
+            code: raw.employeeCode,
+            name: raw.employeeName,
+            position: null,
+            department: raw.departmentName
+              ? { id: null, code: null, name: raw.departmentName }
+              : null,
+          },
+      period: latestCalculation?.period ?? null,
+      raw: {
+        importId: raw.import.id,
+        fileName: raw.import.originalName,
+        mappingVersion: raw.import.mappingVersion,
+        importedAt: raw.import.attemptedAt,
+        sheet: raw.sheet,
+        rowNo: raw.rowNo,
+        attendanceDate: raw.attendanceDateRaw,
+        checkIn: raw.checkInRaw,
+        checkOut: raw.checkOutRaw,
+        shiftName: raw.shiftNameRaw,
+        cells: raw.rawCells,
+      },
+      normalization: latestNormalization,
+      calculation: latestCalculation,
+      exceptions: raw.exceptions.map((item) => ({
+        ...item,
+        description: this.exceptionDescription(item.code, item.details),
+        severity: item.blocking ? ('BLOCKING' as const) : ('WARNING' as const),
+      })),
+      adjustments: raw.adjustments,
+      history,
+      version: Math.max(
+        latestNormalization?.revision ?? 0,
+        latestCalculation?.revision ?? 0,
+        raw.adjustments[0]?.revision ?? 0,
+      ),
+    };
+  }
+
+  async previewException(user: AuthenticatedUser, rawId: string, dto: ExceptionPreviewDto) {
+    const detail = await this.getExceptionDetail(user, rawId);
+    const current = detail.normalization;
+    const shiftCode =
+      dto.shiftCode === undefined ? (current?.shiftCode ?? detail.raw.shiftName) : dto.shiftCode;
+    const shiftDate =
+      dto.shiftDate === undefined
+        ? (current?.shiftDate?.toISOString().slice(0, 10) ?? detail.raw.attendanceDate)
+        : dto.shiftDate;
+    const checkInAt =
+      dto.checkInAt === undefined ? (current?.checkInAt?.toISOString() ?? null) : dto.checkInAt;
+    const checkOutAt =
+      dto.checkOutAt === undefined ? (current?.checkOutAt?.toISOString() ?? null) : dto.checkOutAt;
+    const result = calculateAttendance(
+      {
+        employeeCode: detail.employee.code,
+        shiftCode,
+        shiftDate,
+        checkInAt,
+        checkOutAt,
+        shiftDateEvidence: shiftDate
+          ? { type: 'HR_ADJUSTMENT', reference: `preview:${rawId}` }
+          : null,
+        checkOutDateEvidence: checkOutAt
+          ? { type: 'HR_ADJUSTMENT', reference: `preview:${rawId}` }
+          : null,
+      },
+      { abnormalDurationThresholdSeconds: 57_600, timezone: 'Asia/Ho_Chi_Minh' },
+    );
+    return {
+      persisted: false,
+      inputVersion: detail.version,
+      before: detail.calculation,
+      preview: result,
+      remainingBlockingCodes: result.exceptions
+        .filter((item) => item.blocking)
+        .map((item) => item.code),
+    };
+  }
+
+  async exportExceptionsExcel(user: AuthenticatedUser, query: ExceptionQueryDto) {
+    const first = await this.listExceptions(user, { ...query, page: 1, pageSize: 100 });
+    const items = [...first.items];
+    for (let page = 2; items.length < first.total; page++) {
+      const next = await this.listExceptions(user, { ...query, page, pageSize: 100 });
+      items.push(...next.items);
+      if (!next.items.length) break;
+    }
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Tính công In Nhật Hàn';
+    workbook.created = new Date();
+    const sheet = workbook.addWorksheet('Ngoại lệ');
+    sheet.columns = [
+      { header: 'Kỳ công', key: 'period', width: 12 },
+      { header: 'Mã nhân viên', key: 'employeeCode', width: 18 },
+      { header: 'Họ tên', key: 'employeeName', width: 28 },
+      { header: 'Phòng ban', key: 'department', width: 24 },
+      { header: 'Ngày công', key: 'attendanceDate', width: 14 },
+      { header: 'Ca', key: 'shiftCode', width: 12 },
+      { header: 'Giờ vào', key: 'checkIn', width: 16 },
+      { header: 'Giờ ra', key: 'checkOut', width: 16 },
+      { header: 'Mã lỗi', key: 'codes', width: 42 },
+      { header: 'Mức độ', key: 'severity', width: 15 },
+      { header: 'Trạng thái', key: 'status', width: 15 },
+      { header: 'Người xử lý gần nhất', key: 'actor', width: 24 },
+      { header: 'Thời gian xử lý', key: 'handledAt', width: 24 },
+      { header: 'Ghi chú', key: 'note', width: 38 },
+    ];
+    for (const item of items) {
+      const resolution = item.exceptions.flatMap((exception) => exception.resolutions)[0];
+      sheet.addRow({
+        period: item.period
+          ? `${String(item.period.month).padStart(2, '0')}/${item.period.year}`
+          : '',
+        employeeCode: this.safeExcelText(item.employeeCode),
+        employeeName: this.safeExcelText(item.employeeName),
+        department: this.safeExcelText(item.departmentName ?? ''),
+        attendanceDate: item.shiftDate ?? item.attendanceDate,
+        shiftCode: this.safeExcelText(item.shiftCode ?? ''),
+        checkIn: item.checkIn,
+        checkOut: item.checkOut,
+        codes: this.safeExcelText(item.exceptions.map((exception) => exception.code).join(', ')),
+        severity: item.severity,
+        status: item.status,
+        actor: this.safeExcelText(resolution?.actor.username ?? ''),
+        handledAt: resolution?.createdAt ?? '',
+        note: this.safeExcelText(resolution?.reason ?? ''),
+      });
+    }
+    sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1769D2' } };
+    sheet.autoFilter = { from: 'A1', to: 'N1' };
+    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+    const metadata = workbook.addWorksheet('Thông tin xuất');
+    metadata.addRows([
+      ['Thời gian xuất', new Date().toISOString()],
+      ['Tổng bản ghi', items.length],
+      ['Tổng mã lỗi', items.reduce((sum, item) => sum + item.exceptions.length, 0)],
+      ['Bộ lọc', JSON.stringify(query)],
+      ['Phiên bản', 'exception-export-v1'],
+    ]);
+    return Buffer.from(await workbook.xlsx.writeBuffer());
   }
 
   async resolveException(id: string, dto: ResolveExceptionDto, user: AuthenticatedUser) {
+    if (this.config.get('WORKFLOW_ENABLED') !== 'true') {
+      throw new ConflictException({
+        code: 'BUSINESS_RULE_NOT_CONFIGURED',
+        message: 'Chưa cho phép lưu xử lý ngoại lệ cho tới khi Q10/Q11 được phê duyệt.',
+      });
+    }
     const where: Prisma.AttendanceExceptionWhereInput = user.roles.includes(RoleCode.ADMIN)
       ? { id }
       : { id, raw: { employee: await this.employeeScope(user) } };
@@ -738,22 +1180,18 @@ export class CoreService {
           ...(dto.after ? { after: dto.after as Prisma.InputJsonValue } : {}),
         },
       });
-      await tx.attendanceException.update({
-        where: { id },
-        data: { status: ExceptionStatus.RESOLVED },
-      });
       await tx.auditLog.create({
         data: {
           actorId: user.id,
-          action: 'EXCEPTION_RESOLVED',
+          action: 'EXCEPTION_REVIEW_RECORDED',
           entity: 'AttendanceException',
           entityId: id,
           before: { status: current.status },
-          after: { status: ExceptionStatus.RESOLVED, requiresRevalidation: true },
+          after: { status: current.status, requiresRevalidation: true },
           reason: dto.reason,
         },
       });
-      return { id, status: ExceptionStatus.RESOLVED, requiresRevalidation: true };
+      return { id, status: current.status, requiresRevalidation: true };
     });
   }
 
@@ -763,6 +1201,116 @@ export class CoreService {
 
   createShift(dto: CreateShiftDto) {
     return this.prisma.shift.create({ data: { code: dto.code, name: dto.name } });
+  }
+
+  listCompanyHolidays(query: CompanyHolidayQueryDto) {
+    let dateRange: Prisma.DateTimeFilter | undefined;
+    if (query.month) {
+      const year = Number(query.month.slice(0, 4));
+      const month = Number(query.month.slice(5, 7));
+      dateRange = {
+        gte: new Date(Date.UTC(year, month - 1, 1)),
+        lt: new Date(Date.UTC(year, month, 1)),
+      };
+    }
+    return this.prisma.companyHoliday.findMany({
+      ...(dateRange ? { where: { holidayDate: dateRange } } : {}),
+      include: { createdBy: { select: { id: true, username: true } } },
+      orderBy: { holidayDate: 'asc' },
+    });
+  }
+
+  async createCompanyHoliday(dto: CreateCompanyHolidayDto, user: AuthenticatedUser) {
+    const holidayDate = this.parseDateOnly(dto.holidayDate);
+    await this.assertPeriodMutableForDate(holidayDate);
+    const name = dto.name.trim();
+
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.companyHoliday.findUnique({ where: { holidayDate } });
+      if (existing) throw new ConflictException('Ngày này đã được cấu hình nghỉ lễ.');
+
+      const holiday = await tx.companyHoliday.create({
+        data: { holidayDate, name, createdById: user.id },
+        include: { createdBy: { select: { id: true, username: true } } },
+      });
+      const blankRows = await tx.attendanceRaw.findMany({
+        where: {
+          attendanceDateRaw: dto.holidayDate,
+          AND: [
+            { OR: [{ checkInRaw: null }, { checkInRaw: '' }] },
+            { OR: [{ checkOutRaw: null }, { checkOutRaw: '' }] },
+          ],
+        },
+        select: { id: true },
+      });
+      const rawIds = blankRows.map((row) => row.id);
+      const exceptions = rawIds.length
+        ? await tx.attendanceException.findMany({
+            where: { rawId: { in: rawIds }, status: ExceptionStatus.OPEN },
+            select: { id: true },
+          })
+        : [];
+      if (exceptions.length) {
+        const reason = `Ngày ${dto.holidayDate} được HR cấu hình là ngày nghỉ lễ (${name}); dòng trống cả giờ vào/ra không cần xử lý ngoại lệ.`;
+        await tx.exceptionResolution.createMany({
+          data: exceptions.map((item) => ({
+            exceptionId: item.id,
+            action: 'REVALIDATED_COMPANY_HOLIDAY',
+            before: { status: 'OPEN' },
+            after: { status: 'RESOLVED' },
+            reason,
+            actorId: user.id,
+          })),
+        });
+        await tx.attendanceException.updateMany({
+          where: { id: { in: exceptions.map((item) => item.id) } },
+          data: { status: ExceptionStatus.RESOLVED },
+        });
+      }
+      await tx.auditLog.create({
+        data: {
+          actorId: user.id,
+          action: 'COMPANY_HOLIDAY_CREATED',
+          entity: 'CompanyHoliday',
+          entityId: holiday.id,
+          after: {
+            holidayDate: dto.holidayDate,
+            name,
+            blankRawRows: rawIds.length,
+            resolvedExceptions: exceptions.length,
+          },
+        },
+      });
+      return { ...holiday, resolvedExceptions: exceptions.length };
+    });
+  }
+
+  async deleteCompanyHoliday(id: string, user: AuthenticatedUser) {
+    const holiday = await this.prisma.companyHoliday.findUnique({ where: { id } });
+    if (!holiday) throw new NotFoundException();
+    await this.assertPeriodMutableForDate(holiday.holidayDate);
+    const holidayDate = holiday.holidayDate.toISOString().slice(0, 10);
+    const rawRows = await this.prisma.attendanceRaw.count({
+      where: { attendanceDateRaw: holidayDate },
+    });
+    if (rawRows > 0) {
+      throw new ConflictException(
+        'Không thể xóa ngày nghỉ đã có dữ liệu import; hãy liên hệ quản trị để revalidate có kiểm soát.',
+      );
+    }
+    return this.prisma.$transaction(async (tx) => {
+      await tx.companyHoliday.delete({ where: { id } });
+      await tx.auditLog.create({
+        data: {
+          actorId: user.id,
+          action: 'COMPANY_HOLIDAY_DELETED',
+          entity: 'CompanyHoliday',
+          entityId: id,
+          before: { holidayDate, name: holiday.name },
+        },
+      });
+      return { id, deleted: true };
+    });
   }
 
   listAudit(query: PaginationDto) {
@@ -907,8 +1455,8 @@ export class CoreService {
             presenceSeconds: true,
             breakSeconds: true,
             workedSeconds: true,
-            lateSeconds: true,
-            earlySeconds: true,
+            lateCount: true,
+            earlyCount: true,
             tier100Seconds: true,
             tier130Seconds: true,
             tier150Seconds: true,
@@ -970,8 +1518,8 @@ export class CoreService {
           presenceSeconds: calculation?.presenceSeconds ?? null,
           breakSeconds: calculation?.breakSeconds ?? null,
           workedSeconds: calculation?.workedSeconds ?? null,
-          lateSeconds: calculation?.lateSeconds ?? null,
-          earlySeconds: calculation?.earlySeconds ?? null,
+          lateCount: calculation?.lateCount ?? null,
+          earlyCount: calculation?.earlyCount ?? null,
           tier100Seconds: calculation?.tier100Seconds ?? null,
           tier130Seconds: calculation?.tier130Seconds ?? null,
           tier150Seconds: calculation?.tier150Seconds ?? null,
@@ -1006,8 +1554,8 @@ export class CoreService {
         tier200Seconds: total.tier200Seconds + (row.tier200Seconds ?? 0),
         tier210Seconds: total.tier210Seconds + (row.tier210Seconds ?? 0),
         tier230Seconds: total.tier230Seconds + (row.tier230Seconds ?? 0),
-        lateSeconds: total.lateSeconds + (row.lateSeconds ?? 0),
-        earlySeconds: total.earlySeconds + (row.earlySeconds ?? 0),
+        lateCount: total.lateCount + (row.lateCount ?? 0),
+        earlyCount: total.earlyCount + (row.earlyCount ?? 0),
         attendanceDays: total.attendanceDays,
         exceptionCount: total.exceptionCount,
       }),
@@ -1135,8 +1683,8 @@ export class CoreService {
       tier200Seconds: 0,
       tier210Seconds: 0,
       tier230Seconds: 0,
-      lateSeconds: 0,
-      earlySeconds: 0,
+      lateCount: 0,
+      earlyCount: 0,
       attendanceDays: 0,
       exceptionCount: 0,
     };
@@ -1153,8 +1701,8 @@ export class CoreService {
       tier200Seconds: 0,
       tier210Seconds: 0,
       tier230Seconds: 0,
-      lateSeconds: 0,
-      earlySeconds: 0,
+      lateCount: 0,
+      earlyCount: 0,
       attendanceDays: 0,
       exceptionCount: 0,
     };
@@ -1229,8 +1777,8 @@ export class CoreService {
               tier200Seconds: true,
               tier210Seconds: true,
               tier230Seconds: true,
-              lateSeconds: true,
-              earlySeconds: true,
+              lateCount: true,
+              earlyCount: true,
               raw: { select: { employeeId: true, departmentName: true } },
               normalization: { select: { shiftDate: true, shiftCode: true } },
             },
@@ -1272,8 +1820,8 @@ export class CoreService {
       tier200Seconds: number;
       tier210Seconds: number;
       tier230Seconds: number;
-      lateSeconds: number;
-      earlySeconds: number;
+      lateCount: number;
+      earlyCount: number;
       shiftDates: Set<string>;
       exceptionCount: number;
       blockingExceptionCount: number;
@@ -1292,8 +1840,8 @@ export class CoreService {
           tier200Seconds: 0,
           tier210Seconds: 0,
           tier230Seconds: 0,
-          lateSeconds: 0,
-          earlySeconds: 0,
+          lateCount: 0,
+          earlyCount: 0,
           shiftDates: new Set<string>(),
           exceptionCount: 0,
           blockingExceptionCount: 0,
@@ -1337,8 +1885,8 @@ export class CoreService {
       accumulator.tier200Seconds += calculation.tier200Seconds ?? 0;
       accumulator.tier210Seconds += calculation.tier210Seconds ?? 0;
       accumulator.tier230Seconds += calculation.tier230Seconds ?? 0;
-      accumulator.lateSeconds += calculation.lateSeconds ?? 0;
-      accumulator.earlySeconds += calculation.earlySeconds ?? 0;
+      accumulator.lateCount += calculation.lateCount ?? 0;
+      accumulator.earlyCount += calculation.earlyCount ?? 0;
       if (calculation.normalization.shiftDate) {
         accumulator.shiftDates.add(calculation.normalization.shiftDate.toISOString().slice(0, 10));
       }
@@ -1370,8 +1918,8 @@ export class CoreService {
         tier200Seconds: accumulator?.tier200Seconds ?? 0,
         tier210Seconds: accumulator?.tier210Seconds ?? 0,
         tier230Seconds: accumulator?.tier230Seconds ?? 0,
-        lateSeconds: accumulator?.lateSeconds ?? 0,
-        earlySeconds: accumulator?.earlySeconds ?? 0,
+        lateCount: accumulator?.lateCount ?? 0,
+        earlyCount: accumulator?.earlyCount ?? 0,
         workingDays: null,
         attendanceDays: accumulator?.shiftDates.size ?? 0,
         exceptionCount: accumulator?.exceptionCount ?? 0,
@@ -1427,8 +1975,8 @@ export class CoreService {
         tier200Seconds: total.tier200Seconds + row.tier200Seconds,
         tier210Seconds: total.tier210Seconds + row.tier210Seconds,
         tier230Seconds: total.tier230Seconds + row.tier230Seconds,
-        lateSeconds: total.lateSeconds + row.lateSeconds,
-        earlySeconds: total.earlySeconds + row.earlySeconds,
+        lateCount: total.lateCount + row.lateCount,
+        earlyCount: total.earlyCount + row.earlyCount,
         attendanceDays: total.attendanceDays + row.attendanceDays,
         exceptionCount: total.exceptionCount + row.exceptionCount,
       }),
@@ -1572,8 +2120,8 @@ export class CoreService {
       'Giờ 200%',
       'Giờ 210%',
       'Giờ 230%',
-      'Đi muộn',
-      'Về sớm',
+      'Lượt đi muộn',
+      'Lượt về sớm',
       'Số ngày làm việc',
       'Số ngày có mặt',
       'Số ngoại lệ',
@@ -1586,7 +2134,7 @@ export class CoreService {
     headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1769D2' } };
     headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
     headerRow.height = 32;
-    const durationColumns = [5, 6, 7, 8, 9, 10, 11, 12, 13];
+    const durationColumns = [5, 6, 7, 8, 9, 10, 11];
     allRows.forEach((row, index) => {
       const values: Array<string | number> = [
         index + 1,
@@ -1600,8 +2148,8 @@ export class CoreService {
         row.tier200Seconds / 86_400,
         row.tier210Seconds / 86_400,
         row.tier230Seconds / 86_400,
-        row.lateSeconds / 86_400,
-        row.earlySeconds / 86_400,
+        row.lateCount,
+        row.earlyCount,
         row.workingDays ?? 'N/A',
         row.attendanceDays,
         row.exceptionCount,
@@ -1625,8 +2173,8 @@ export class CoreService {
       response.totals.tier200Seconds / 86_400,
       response.totals.tier210Seconds / 86_400,
       response.totals.tier230Seconds / 86_400,
-      response.totals.lateSeconds / 86_400,
-      response.totals.earlySeconds / 86_400,
+      response.totals.lateCount,
+      response.totals.earlyCount,
       'N/A',
       response.totals.attendanceDays,
       response.totals.exceptionCount,
@@ -1666,8 +2214,8 @@ export class CoreService {
       ['Giờ vào', 'checkInAt'],
       ['Giờ ra', 'checkOutAt'],
       ['Giờ công (giây)', 'workedSeconds'],
-      ['Đi muộn (giây)', 'lateSeconds'],
-      ['Về sớm (giây)', 'earlySeconds'],
+      ['Lượt đi muộn', 'lateCount'],
+      ['Lượt về sớm', 'earlyCount'],
       ['100% (giây)', 'tier100Seconds'],
       ['130% (giây)', 'tier130Seconds'],
       ['150% (giây)', 'tier150Seconds'],
@@ -1687,8 +2235,8 @@ export class CoreService {
         checkInAt: item.normalization.checkInAt,
         checkOutAt: item.normalization.checkOutAt,
         workedSeconds: item.workedSeconds,
-        lateSeconds: item.lateSeconds,
-        earlySeconds: item.earlySeconds,
+        lateCount: item.lateCount,
+        earlyCount: item.earlyCount,
         tier100Seconds: item.tier100Seconds,
         tier130Seconds: item.tier130Seconds,
         tier150Seconds: item.tier150Seconds,
@@ -1838,6 +2386,145 @@ export class CoreService {
       .replace(/đ/giu, 'd')
       .toLocaleLowerCase('vi-VN')
       .trim();
+  }
+
+  private async exceptionRawWhere(
+    user: AuthenticatedUser,
+    query: ExceptionQueryDto,
+    includeExceptionFacets = true,
+  ): Promise<Prisma.AttendanceRawWhereInput> {
+    const conditions: Prisma.AttendanceRawWhereInput[] = [{ exceptions: { some: {} } }];
+    if (!user.roles.includes(RoleCode.ADMIN)) {
+      conditions.push({ employee: await this.employeeScope(user) });
+    }
+    if (query.search?.trim()) {
+      conditions.push({
+        OR: [
+          { employeeCode: { contains: query.search.trim(), mode: 'insensitive' } },
+          { employeeName: { contains: query.search.trim(), mode: 'insensitive' } },
+          { employee: { code: { contains: query.search.trim(), mode: 'insensitive' } } },
+          { employee: { name: { contains: query.search.trim(), mode: 'insensitive' } } },
+        ],
+      });
+    }
+    if (query.departmentId) conditions.push({ employee: { departmentId: query.departmentId } });
+    if (query.periodId) conditions.push({ calculations: { some: { periodId: query.periodId } } });
+    if (query.shiftCode) {
+      conditions.push({
+        OR: [
+          { normalizations: { some: { shiftCode: query.shiftCode } } },
+          { shiftNameRaw: { equals: query.shiftCode, mode: 'insensitive' } },
+        ],
+      });
+    }
+    if (query.month) {
+      const year = Number(query.month.slice(0, 4));
+      const month = Number(query.month.slice(5, 7));
+      const from = new Date(Date.UTC(year, month - 1, 1));
+      const to = new Date(Date.UTC(year, month, 1));
+      conditions.push({
+        OR: [
+          { attendanceDateRaw: { startsWith: query.month } },
+          {
+            attendanceDateRaw: { contains: `/${query.month.slice(5)}/${query.month.slice(0, 4)}` },
+          },
+          { normalizations: { some: { shiftDate: { gte: from, lt: to } } } },
+        ],
+      });
+    }
+    if (includeExceptionFacets) {
+      if (query.code) conditions.push({ exceptions: { some: { code: query.code } } });
+      if (query.severity === 'BLOCKING') {
+        conditions.push({ exceptions: { some: { blocking: true } } });
+      } else if (query.severity === 'WARNING') {
+        conditions.push({ exceptions: { some: { blocking: false } } });
+      } else if (query.severity === 'INFO') {
+        conditions.push({ exceptions: { some: { code: { startsWith: 'INFO_' } } } });
+      }
+      if (query.status === ExceptionStatus.OPEN) {
+        conditions.push({ exceptions: { some: { status: ExceptionStatus.OPEN } } });
+      } else if (query.status === ExceptionStatus.RESOLVED) {
+        conditions.push({ exceptions: { none: { status: ExceptionStatus.OPEN } } });
+      }
+    }
+    return { AND: conditions };
+  }
+
+  private exceptionListItem(raw: ExceptionListRaw) {
+    const normalization = raw.normalizations[0] ?? null;
+    const calculation = raw.calculations[0] ?? null;
+    return {
+      id: raw.id,
+      employeeId: raw.employee?.id ?? null,
+      employeeCode: raw.employee?.code ?? raw.employeeCode,
+      employeeName: raw.employee?.name ?? raw.employeeName,
+      departmentId: raw.employee?.departmentId ?? null,
+      departmentName: raw.employee?.department?.name ?? raw.departmentName,
+      attendanceDate: raw.attendanceDateRaw,
+      shiftDate: normalization?.shiftDate?.toISOString().slice(0, 10) ?? null,
+      shiftCode: normalization?.shiftCode ?? raw.shiftNameRaw,
+      checkIn: raw.checkInRaw,
+      checkOut: raw.checkOutRaw,
+      normalizedCheckInAt: normalization?.checkInAt ?? null,
+      normalizedCheckOutAt: normalization?.checkOutAt ?? null,
+      normalizationRevision: normalization?.revision ?? null,
+      calculationId: calculation?.id ?? null,
+      calculationRevision: calculation?.revision ?? null,
+      calculationStatus: calculation?.status ?? null,
+      workedSeconds: calculation?.workedSeconds ?? null,
+      lateCount: calculation?.lateCount ?? null,
+      earlyCount: calculation?.earlyCount ?? null,
+      period: calculation?.period ?? null,
+      severity: this.exceptionSeverity(raw.exceptions),
+      status: raw.exceptions.some((item) => item.status === ExceptionStatus.OPEN)
+        ? ExceptionStatus.OPEN
+        : ExceptionStatus.RESOLVED,
+      exceptions: raw.exceptions.map((item) => ({
+        ...item,
+        description: this.exceptionDescription(item.code, item.details),
+        severity: item.blocking ? ('BLOCKING' as const) : ('WARNING' as const),
+      })),
+    };
+  }
+
+  private exceptionSeverity(items: Array<{ blocking: boolean }>): ExceptionSeverity {
+    if (items.some((item) => item.blocking)) return 'BLOCKING';
+    return items.length ? 'WARNING' : 'INFO';
+  }
+
+  private exceptionDescription(code: string, details: Prisma.JsonValue | null) {
+    if (details && typeof details === 'object' && !Array.isArray(details)) {
+      const message = (details as Prisma.JsonObject).message;
+      const reason = (details as Prisma.JsonObject).reason;
+      if (typeof message === 'string') return message;
+      if (typeof reason === 'string') return reason;
+    }
+    return EXCEPTION_DESCRIPTIONS[code] ?? 'Dữ liệu chấm công cần được kiểm tra.';
+  }
+
+  private parseDateOnly(value: string) {
+    const date = new Date(`${value}T00:00:00.000Z`);
+    if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
+      throw new BadRequestException('Ngày nghỉ lễ không hợp lệ.');
+    }
+    return date;
+  }
+
+  private async assertPeriodMutableForDate(date: Date) {
+    const period = await this.prisma.attendancePeriod.findUnique({
+      where: {
+        year_month: { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1 },
+      },
+      select: { id: true, status: true },
+    });
+    if (
+      period &&
+      (period.status === PeriodStatus.LOCKED || period.status === PeriodStatus.PUBLISHED)
+    ) {
+      throw new ConflictException(
+        'Kỳ công của ngày này đã LOCKED/PUBLISHED; không được sửa cấu hình trực tiếp.',
+      );
+    }
   }
 
   private async employeeScope(user: AuthenticatedUser): Promise<Prisma.EmployeeWhereInput> {

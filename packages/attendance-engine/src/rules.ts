@@ -16,6 +16,7 @@ export interface ShiftTimeline {
   checkOutBlockSeconds: number | null;
   postCompletionBlockSeconds: number | null;
   sundayTierPercentage: 200 | 230 | null;
+  lateAfter: number;
 }
 
 export function isShiftCode(value: string | null): value is ShiftCode {
@@ -34,6 +35,7 @@ function defaultShiftRule(shiftCode: ShiftCode): EngineShiftRule {
       checkOutBlockSeconds: 30 * 60,
       postCompletionBlockSeconds: 30 * 60,
       sundayTierPercentage: 200,
+      lateAfterSeconds: 8 * 60 * 60 + 60,
     };
   }
 
@@ -47,6 +49,7 @@ function defaultShiftRule(shiftCode: ShiftCode): EngineShiftRule {
     checkOutBlockSeconds: null,
     postCompletionBlockSeconds: 30 * 60,
     sundayTierPercentage: 230,
+    lateAfterSeconds: 22 * 60 * 60 + 60,
   };
 }
 
@@ -67,5 +70,6 @@ export function buildShiftTimeline(
     checkOutBlockSeconds: rule.checkOutBlockSeconds,
     postCompletionBlockSeconds: rule.postCompletionBlockSeconds,
     sundayTierPercentage: rule.sundayTierPercentage,
+    lateAfter: midnight + rule.lateAfterSeconds,
   };
 }

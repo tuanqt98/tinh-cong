@@ -25,7 +25,7 @@ Kỳ vọng số tính bằng phút để dễ đọc; triển khai/test nội b
 | T15 | Tên ca không xác định                                        | `INVALID_SHIFT`; không tự gán                                                    | fail-closed                            | PASS_SYNTHETIC         |
 | T16 | Các dòng giống nhau/chồng NV-ngày                            | detector phân biệt duplicate với multiple rows; không cộng đôi                   | DEC-003/004                            | PASS_SYNTHETIC         |
 | T17 | Giờ 25:61, ngày sai, hoặc B<A sau normalization có căn cứ    | lưu đủ lỗi áp dụng; `NEEDS_REVIEW`, chặn tính                                    | DEC-005/006                            | PASS_SYNTHETIC         |
-| T18 | NV không có dữ liệu một ngày                                 | `NO_ATTENDANCE`; không tự quy nghỉ; blocking còn OPEN theo lịch                  | ngoài phạm vi nghỉ/phép                | PASS_SYNTHETIC         |
+| T18 | NV không có dữ liệu một ngày không phải Chủ nhật             | `NO_ATTENDANCE`; không tự quy nghỉ; blocking còn OPEN theo lịch                  | ngoài phạm vi nghỉ/phép                | PASS_SYNTHETIC         |
 | T19 | Import lại cùng file, detector xác định trùng dữ liệu đã lưu | từ chối toàn import; raw/calculation không tăng; giữ audit attempt và dòng/lý do | DEC-003                                | PARTIAL_UNIT_PASS      |
 | T20 | Correction 08:30→08:00, ra17:00                              | W450→480; raw không đổi; revision/lý do/actor; revalidate                        | bất biến nguồn                         | NOT_RUN                |
 | T21 | Mọi calculation hợp lệ                                       | tổng sáu mức=W; R bằng giao; tất cả giây không âm                                | bất biến                               | PASS_SYNTHETIC         |
@@ -36,27 +36,33 @@ Kỳ vọng số tính bằng phút để dễ đọc; triển khai/test nội b
 
 ## 13 test bổ sung bắt buộc
 
-| ID  | Tình huống                                                           | Kỳ vọng                                                                                                                        | Quyết định      | Trạng thái                   |
-| --- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | --------------- | ---------------------------- |
-| T26 | Phân ca nguồn Ca3 ngày D; vào thực tế D+1 00:30, ra D+1 07:00        | `shift_date=D`, giữ `check_in_at=D+1 00:30`; W360, T(240,120,0,0,0,0), L330 E0 nếu không lỗi khác; evidence trỏ dòng nguồn     | DEC-001/007/008 | PASS_SYNTHETIC               |
-| T27 | Ca3 có giờ ra 07:00 nhưng thiếu ngày/lịch/mapping đủ tin cậy         | `UNRESOLVED_CHECKOUT_DATE`, `NEEDS_REVIEW`; không calculation hợp lệ; evidence thiếu được ghi rõ                               | DEC-002         | PASS_SYNTHETIC               |
-| T28 | Hai bản ghi trùng trong cùng file                                    | đánh dấu `WITHIN_FILE` với cả dòng/lý do; từ chối toàn import; không ghi raw một phần                                          | DEC-003         | PASS_SYNTHETIC               |
-| T29 | Một bản ghi trùng với dữ liệu đã lưu                                 | đánh dấu `STORED_DATA` và tham chiếu an toàn; từ chối toàn import; audit attempt                                               | DEC-003         | PASS_SYNTHETIC               |
-| T30 | File mới giống lần trước nhưng một dòng thay đổi                     | không tự coi là replacement/merge; các dòng trùng phát hiện được làm toàn import bị từ chối; dòng thay đổi không ghi đè bản cũ | DEC-003         | NOT_RUN                      |
-| T31 | Một NV có hai dòng cùng `shift_date`, không phải duplicate tuyệt đối | giữ hai raw; tạo `MULTIPLE_ROWS_SAME_EMPLOYEE_SHIFT_DATE`; không cộng/ghép và không tạo tổng hợp hợp lệ                        | DEC-004         | PASS_SYNTHETIC               |
-| T32 | `A=B` sau normalization có căn cứ                                    | `EQUAL_CHECK_TIMES`, `NEEDS_REVIEW`; không tự sửa/không VALID                                                                  | DEC-005         | PASS_SYNTHETIC               |
-| T33 | Hiện diện 16:00:01 với ngưỡng cấu hình 16 giờ                        | `EXCESSIVE_DURATION`, `NEEDS_REVIEW`; không VALID; kiểm tra cạnh đúng 16:00:00 không bị lỗi `>`                                | DEC-005         | PASS_SYNTHETIC               |
-| T34 | Một dòng đồng thời sai ca, thiếu checkout và ngày ca không xác định  | lưu đủ ba mã lỗi; trạng thái tổng hợp `NEEDS_REVIEW`; không bỏ lỗi sau lỗi đầu                                                 | DEC-006         | PASS_SYNTHETIC               |
-| T35 | Yêu cầu chốt/LOCKED khi còn ít nhất một lỗi blocking                 | từ chối chuyển trạng thái; ghi audit; sau `RESOLVED` vẫn phải revalidate/recalculate trước khi chốt                            | DEC-006         | PARTIAL_GUARD_PASS           |
-| T36 | Ca3 vào 18:45, ra 07:15 và 07:30                                     | giữ raw 18:45/07:15 hoặc 07:30; lượt 07:15 tính như 19:00–07:00, lượt 07:30 tính thêm đúng 30 phút; tổng tier bằng W           | DEC-008         | PASS_UNIT_AND_DB_INTEGRATION |
-| T37 | Ca1 vào 06:30, ra 19:20 và 19:30                                     | giữ raw 06:30/19:20 hoặc 19:30; lượt 19:20 tính như 07:00–19:00, lượt 19:30 tính thêm đúng 30 phút; tổng tier bằng W           | DEC-009         | PASS_UNIT_AND_DB_INTEGRATION |
-| T38 | Ca1 có `D` là Chủ nhật, vào 06:30 và ra 19:30                        | W690; T(0,0,0,690,0,0); vẫn giới hạn vào sớm và chỉ nhận khối đủ 30 phút sau 19:00                                             | DEC-010         | PASS_UNIT_AND_DB_INTEGRATION |
-| T39 | Ca3 có `D` là Chủ nhật, ra vào thứ Hai 07:30                         | W690; T(0,0,0,0,0,690); mức dựa trên `D`, vẫn giới hạn vào sớm và khối đủ 30 phút sau 07:00                                    | DEC-010         | PASS_UNIT_AND_DB_INTEGRATION |
-| T40 | Ca1 vào 06:37, ra 18:11                                              | giữ raw 06:37/18:11; tính `Ac=07:00`, `Bc=18:00`, nghỉ 60 phút, W600; T(480,0,120,0,0,0); về sớm dùng raw nên E49              | DEC-011         | PASS_UNIT_AND_DB_INTEGRATION |
+| ID  | Tình huống                                                           | Kỳ vọng                                                                                                                        | Quyết định          | Trạng thái                   |
+| --- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------- | ---------------------------- |
+| T26 | Phân ca nguồn Ca3 ngày D; vào thực tế D+1 00:30, ra D+1 07:00        | `shift_date=D`, giữ `check_in_at=D+1 00:30`; W360, T(240,120,0,0,0,0), L1 E0 nếu không lỗi khác; evidence trỏ dòng nguồn       | DEC-001/007/008/014 | PASS_SYNTHETIC               |
+| T27 | Ca3 có giờ ra 07:00 nhưng thiếu ngày/lịch/mapping đủ tin cậy         | `UNRESOLVED_CHECKOUT_DATE`, `NEEDS_REVIEW`; không calculation hợp lệ; evidence thiếu được ghi rõ                               | DEC-002             | PASS_SYNTHETIC               |
+| T28 | Hai bản ghi trùng trong cùng file                                    | đánh dấu `WITHIN_FILE` với cả dòng/lý do; từ chối toàn import; không ghi raw một phần                                          | DEC-003             | PASS_SYNTHETIC               |
+| T29 | Một bản ghi trùng với dữ liệu đã lưu                                 | đánh dấu `STORED_DATA` và tham chiếu an toàn; từ chối toàn import; audit attempt                                               | DEC-003             | PASS_SYNTHETIC               |
+| T30 | File mới giống lần trước nhưng một dòng thay đổi                     | không tự coi là replacement/merge; các dòng trùng phát hiện được làm toàn import bị từ chối; dòng thay đổi không ghi đè bản cũ | DEC-003             | NOT_RUN                      |
+| T31 | Một NV có hai dòng cùng `shift_date`, không phải duplicate tuyệt đối | giữ hai raw; tạo `MULTIPLE_ROWS_SAME_EMPLOYEE_SHIFT_DATE`; không cộng/ghép và không tạo tổng hợp hợp lệ                        | DEC-004             | PASS_SYNTHETIC               |
+| T32 | `A=B` sau normalization có căn cứ                                    | `EQUAL_CHECK_TIMES`, `NEEDS_REVIEW`; không tự sửa/không VALID                                                                  | DEC-005             | PASS_SYNTHETIC               |
+| T33 | Hiện diện 16:00:01 với ngưỡng cấu hình 16 giờ                        | `EXCESSIVE_DURATION`, `NEEDS_REVIEW`; không VALID; kiểm tra cạnh đúng 16:00:00 không bị lỗi `>`                                | DEC-005             | PASS_SYNTHETIC               |
+| T34 | Một dòng đồng thời sai ca, thiếu checkout và ngày ca không xác định  | lưu đủ ba mã lỗi; trạng thái tổng hợp `NEEDS_REVIEW`; không bỏ lỗi sau lỗi đầu                                                 | DEC-006             | PASS_SYNTHETIC               |
+| T35 | Yêu cầu chốt/LOCKED khi còn ít nhất một lỗi blocking                 | từ chối chuyển trạng thái; ghi audit; sau `RESOLVED` vẫn phải revalidate/recalculate trước khi chốt                            | DEC-006             | PARTIAL_GUARD_PASS           |
+| T36 | Ca3 vào 18:45, ra 07:15 và 07:30                                     | giữ raw 18:45/07:15 hoặc 07:30; lượt 07:15 tính như 19:00–07:00, lượt 07:30 tính thêm đúng 30 phút; tổng tier bằng W           | DEC-008             | PASS_UNIT_AND_DB_INTEGRATION |
+| T37 | Ca1 vào 06:30, ra 19:20 và 19:30                                     | giữ raw 06:30/19:20 hoặc 19:30; lượt 19:20 tính như 07:00–19:00, lượt 19:30 tính thêm đúng 30 phút; tổng tier bằng W           | DEC-009             | PASS_UNIT_AND_DB_INTEGRATION |
+| T38 | Ca1 có `D` là Chủ nhật, vào 06:30 và ra 19:30                        | W690; T(0,0,0,690,0,0); vẫn giới hạn vào sớm và chỉ nhận khối đủ 30 phút sau 19:00                                             | DEC-010             | PASS_UNIT_AND_DB_INTEGRATION |
+| T39 | Ca3 có `D` là Chủ nhật, ra vào thứ Hai 07:30                         | W690; T(0,0,0,0,0,690); mức dựa trên `D`, vẫn giới hạn vào sớm và khối đủ 30 phút sau 07:00                                    | DEC-010             | PASS_UNIT_AND_DB_INTEGRATION |
+| T40 | Ca1 vào 06:37, ra 18:11                                              | giữ raw 06:37/18:11; tính `Ac=07:00`, `Bc=18:00`, nghỉ 60 phút, W600; T(480,0,120,0,0,0); về sớm dùng raw nên E1               | DEC-011/014         | PASS_UNIT_AND_DB_INTEGRATION |
+| T41 | Chủ nhật có ngày hợp lệ, cả giờ vào và giờ ra đều trống              | giữ raw/import evidence; không promote ngoại lệ, không calculation; ngoại lệ cũ được revalidate có lịch sử                     | DEC-012             | PASS_UNIT_AND_DB_INTEGRATION |
+| T42 | HR cấu hình ngày lễ công ty, ngày đó trống cả giờ vào/ra             | ngoại lệ cũ được resolve có audit; process không promote issue/calculation                                                     | DEC-013             | PASS_DB_INTEGRATION          |
+| T43 | ADMIN thao tác danh mục ngày lễ trên UI                              | tạo, lọc theo tháng, xác nhận xóa và refresh danh sách                                                                         | DEC-013             | PASS_E2E                     |
+| T44 | Ngày lễ có một hoặc hai mốc chấm công                                | vẫn validation/tính theo rule hiện hành; không tự suy diễn hệ số ngày lễ                                                       | DEC-013             | NOT_RUN_RATE_STILL_OPEN      |
+| T45 | Ca1 vào đúng 08:01:00 và 08:01:01                                    | đúng 08:01:00 có L0; sau mốc một giây có L1; mỗi dòng tối đa một lượt                                                          | DEC-014             | PASS_UNIT                    |
+| T46 | Ca3 vào đúng 22:01:00 và 22:01:01                                    | đúng 22:01:00 có L0; sau mốc một giây có L1; mỗi dòng tối đa một lượt                                                          | DEC-014             | PASS_UNIT                    |
 
 ## Ca biên vẫn phải bao phủ
 
-- Ca1 vào 12:30 ra19:00: R30 W360; E0; L330 theo công thức, cần HR xác nhận oracle.
+- Ca1 vào 12:30 ra19:00: R30 W360; E0; L1 theo DEC-014, cần HR xác nhận oracle phần công.
 - Ra đúng đầu/cuối nghỉ; thời lượng chỉ nằm trong nghỉ; vào trước mốc; không cắt ngầm.
 - Dữ liệu có giây phải bảo toàn từng giây; input 08:00:01 không làm tròn.
 - Excel serial 1900/1904, text nhập nhằng, mã NV có số 0 đầu, sheet có nhiều header/ô gộp.
@@ -69,3 +75,10 @@ Kỳ vọng số tính bằng phút để dễ đọc; triển khai/test nội b
 Phase 1: unit test engine/parser bằng fixture có hash; test transaction import; đối chiếu SX.xlsx ẩn danh với expected HR; lưu command, môi trường/version, actual/expected, số PASS/FAIL/SKIP và artifact. Fixture tổng hợp chỉ chứng minh logic mẫu, không chứng minh dữ liệu thực.
 
 Integration/E2E/PDF/security/performance/backup đã chạy trên môi trường và dữ liệu synthetic như `TEST_REPORT.md`. UAT và đối chiếu dữ liệu thật tiếp tục `BLOCKED`.
+
+# Bổ sung test Màn 07 — Xử lý ngoại lệ
+
+- Unit/service: gộp nhiều mã lỗi theo một raw; HR không scope trả rỗng; workflow tắt chặn resolve; raw không bị sửa.
+- API/PostgreSQL (suite 15 case): thêm RBAC HR/EMPLOYEE, revalidation lịch sử và pipeline ngày nghỉ lễ. Suite đạt 15/15 trên database mới sau đủ bảy migration + seed synthetic; database tạm đã xóa.
+- Playwright: KPI/filter URL, một bản ghi ba lỗi, drawer đủ mã lỗi, preview 10 giờ không ghi, nút lưu khóa theo Q10/Q11, drawer mobile toàn màn hình, visual 1536×1024.
+- Regression: Import Excel, Bảng công tổng hợp, Chi tiết bảng công và toàn bộ 12 route tiếp tục nằm trong full E2E.

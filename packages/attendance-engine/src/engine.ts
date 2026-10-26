@@ -148,7 +148,7 @@ export function calculateAttendance(
       checkOutEpochSeconds,
       exceptions,
       calculation: null,
-      ruleVersion: '2026-10-24-dec011',
+      ruleVersion: '2026-10-26-dec014',
     };
   }
 
@@ -180,12 +180,8 @@ export function calculateAttendance(
     timeline.breakEnd,
   );
   const workedSeconds = presenceSeconds - breakSeconds;
-  const lateSeconds = Math.max(safeCheckIn - timeline.scheduledStart, 0);
-  const scheduledWindowSeconds =
-    safeCheckOut -
-    timeline.scheduledStart -
-    overlapSeconds(timeline.scheduledStart, safeCheckOut, timeline.breakStart, timeline.breakEnd);
-  const earlySeconds = Math.max(timeline.targetWorkedSeconds - scheduledWindowSeconds, 0);
+  const lateCount = safeCheckIn > timeline.lateAfter ? 1 : 0;
+  const earlyCount = safeCheckOut < timeline.scheduledCompletion ? 1 : 0;
   const tiers = allocateTiers(
     safeShiftCode,
     safeShiftDate,
@@ -196,8 +192,8 @@ export function calculateAttendance(
     presenceSeconds,
     breakSeconds,
     workedSeconds,
-    lateSeconds,
-    earlySeconds,
+    lateCount,
+    earlyCount,
     ...tiers,
   };
 
@@ -209,6 +205,6 @@ export function calculateAttendance(
     checkOutEpochSeconds: safeCheckOut,
     exceptions: [],
     calculation,
-    ruleVersion: '2026-10-24-dec011',
+    ruleVersion: '2026-10-26-dec014',
   };
 }

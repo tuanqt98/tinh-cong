@@ -7,6 +7,7 @@ import { ExceptionsPage } from './pages/exceptions.js';
 import { ApiListPage } from './pages/generic.js';
 import { ImportsPage } from './pages/imports.js';
 import { LoginPage } from './pages/login.js';
+import { ShiftsPage } from './pages/shifts.js';
 import { AttendanceDetailPage, AttendanceSummaryPage } from './pages/attendance.js';
 
 function Protected() {
@@ -56,16 +57,7 @@ export function App() {
             />
           }
         />
-        <Route
-          path="/shifts"
-          element={
-            <ApiListPage
-              title="Cấu hình ca"
-              description="Rule version và hiệu lực; không hồi tố kỳ cũ."
-              path="/shifts"
-            />
-          }
-        />
+        <Route path="/shifts" element={<ShiftsPage />} />
         <Route
           path="/audit"
           element={

@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs';
 import {
   SOURCE_FIELDS,
   SOURCE_FIELD_ALIASES,
+  isSundayRestWithoutAttendance,
   type ColumnMapping,
   type ImportValidationIssue,
   type ParsedSourceRow,
@@ -19,7 +20,8 @@ export class ExcelParserService {
     } catch {
       throw new BadRequestException('Mapping phải là JSON hợp lệ.');
     }
-    if (!parsed || typeof parsed !== 'object') throw new BadRequestException('Mapping không hợp lệ.');
+    if (!parsed || typeof parsed !== 'object')
+      throw new BadRequestException('Mapping không hợp lệ.');
     const mapping = parsed as Record<string, unknown>;
     for (const field of SOURCE_FIELDS) {
       if (typeof mapping[field] !== 'string' || !String(mapping[field]).trim()) {
@@ -54,7 +56,10 @@ export class ExcelParserService {
         let matchedCount = 0;
         for (const field of SOURCE_FIELDS) {
           const target = mapping[field];
-          if (cellTexts.has(target) || (SOURCE_FIELD_ALIASES[field] ?? []).some((alias) => cellTexts.has(alias))) {
+          if (
+            cellTexts.has(target) ||
+            (SOURCE_FIELD_ALIASES[field] ?? []).some((alias) => cellTexts.has(alias))
+          ) {
             matchedCount++;
           }
         }
@@ -151,17 +156,42 @@ export class ExcelParserService {
   private validateRequired(row: ParsedSourceRow, issues: ImportValidationIssue[]) {
     for (const field of ['employeeCode', 'employeeName', 'departmentName'] as const) {
       if (!row[field]) {
-        issues.push({ sheet: row.sheet, rowNo: row.rowNo, code: 'MISSING_REQUIRED_VALUE', blocking: true, field });
+        issues.push({
+          sheet: row.sheet,
+          rowNo: row.rowNo,
+          code: 'MISSING_REQUIRED_VALUE',
+          blocking: true,
+          field,
+        });
       }
     }
+    if (isSundayRestWithoutAttendance(row)) return;
     if (!row.shiftName || row.shiftName === '--') {
-      issues.push({ sheet: row.sheet, rowNo: row.rowNo, code: 'INVALID_SHIFT', blocking: false, field: 'shiftName' });
+      issues.push({
+        sheet: row.sheet,
+        rowNo: row.rowNo,
+        code: 'INVALID_SHIFT',
+        blocking: false,
+        field: 'shiftName',
+      });
     }
     if (!row.checkIn && !row.checkOut) {
       issues.push({ sheet: row.sheet, rowNo: row.rowNo, code: 'NO_ATTENDANCE', blocking: false });
     } else {
-      if (!row.checkIn) issues.push({ sheet: row.sheet, rowNo: row.rowNo, code: 'MISSING_CHECKIN', blocking: false });
-      if (!row.checkOut) issues.push({ sheet: row.sheet, rowNo: row.rowNo, code: 'MISSING_CHECKOUT', blocking: false });
+      if (!row.checkIn)
+        issues.push({
+          sheet: row.sheet,
+          rowNo: row.rowNo,
+          code: 'MISSING_CHECKIN',
+          blocking: false,
+        });
+      if (!row.checkOut)
+        issues.push({
+          sheet: row.sheet,
+          rowNo: row.rowNo,
+          code: 'MISSING_CHECKOUT',
+          blocking: false,
+        });
     }
   }
 

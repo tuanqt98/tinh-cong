@@ -34,6 +34,20 @@ export interface ParsedSourceRow {
   rawCells: Record<string, string | number | boolean | null>;
 }
 
+export function isBlankAttendance(row: Pick<ParsedSourceRow, 'checkIn' | 'checkOut'>) {
+  return !row.checkIn?.trim() && !row.checkOut?.trim();
+}
+
+export function isSundayRestWithoutAttendance(
+  row: Pick<ParsedSourceRow, 'attendanceDate' | 'checkIn' | 'checkOut'>,
+) {
+  const shiftDate = row.attendanceDate?.trim();
+  if (!shiftDate || !/^\d{4}-\d{2}-\d{2}$/.test(shiftDate)) return false;
+  const date = new Date(`${shiftDate}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== shiftDate) return false;
+  return date.getUTCDay() === 0 && isBlankAttendance(row);
+}
+
 export interface ImportValidationIssue {
   sheet: string;
   rowNo: number;

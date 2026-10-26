@@ -23,7 +23,26 @@ REST /api/v1; tài liệu thiết kế đích cho Phase sau, chưa có endpoint 
 | POST /me/publications/:id/view; /confirm; /feedback | EMPLOYEE chủ sở hữu               | sự kiện xem, xác nhận hoặc phản hồi có audit                                                                   |
 | GET /shifts; GET /shift-rules                       | người có quyền                    | phiên bản và hiệu lực                                                                                          |
 | POST /shift-rules                                   | ADMIN hoặc HR được cấp quyền      | cần xác nhận quyền; không đổi bản đã dùng                                                                      |
+| GET /company-holidays                               | ADMIN/HR/MANAGER                  | danh mục ngày nghỉ lễ toàn công ty, lọc `month=YYYY-MM`                                                        |
+| POST /company-holidays                              | ADMIN/HR                          | tạo ngày + tên, resolve ngoại lệ lịch sử của dòng trống, audit; chặn kỳ LOCKED/PUBLISHED                      |
+| DELETE /company-holidays/:id                        | ADMIN/HR                          | chỉ xóa khi kỳ còn sửa được và ngày chưa có raw import                                                         |
 | GET /audit-logs                                     | ADMIN/HR theo quyền               | phân trang, dữ liệu đã giảm nhạy cảm                                                                           |
+
+## Màn 07 — API xử lý ngoại lệ (24/10/2026)
+
+Module hiện hữu được mở rộng, không tạo hệ thống ngoại lệ thứ hai:
+
+| Endpoint                                | Quyền           | Hành vi đã triển khai                                                                                                                                       |
+| --------------------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /exceptions`                       | ADMIN/HR scoped | Phân trang theo **bản ghi raw**, gộp và trả đầy đủ nhiều mã lỗi; lọc server-side theo kỳ/tháng, phòng ban, ca, mã lỗi, mức độ, trạng thái và tìm nhân viên. |
+| `GET /exceptions/summary`               | ADMIN/HR scoped | KPI theo số bản ghi, tách `totalRecords` và `totalCodes`; không đếm một bản ghi ba lỗi thành ba ngoại lệ.                                                   |
+| `GET /exceptions/:rawId`                | ADMIN/HR scoped | Dữ liệu nhân viên, kỳ, raw bất biến, normalization/calculation mới nhất, toàn bộ lỗi, adjustment và audit/history.                                          |
+| `GET /exceptions/:rawId/history`        | ADMIN/HR scoped | Lịch sử resolution, adjustment và audit trong phạm vi bản ghi.                                                                                              |
+| `POST /exceptions/:rawId/preview`       | ADMIN/HR scoped | Tính thử bằng attendance-engine, `persisted=false`, không ghi adjustment/calculation và không đổi kỳ.                                                       |
+| `GET /exceptions/export`                | ADMIN/HR scoped | Excel toàn bộ tập lọc, metadata thời gian/phiên bản, chống formula injection.                                                                               |
+| `POST /exceptions/:exceptionId/resolve` | ADMIN/HR scoped | Fail-closed HTTP 409 khi `WORKFLOW_ENABLED=false`; không tự chuyển `RESOLVED` chỉ vì ghi nhận review.                                                       |
+
+Mutation adjustment/revalidate chính thức vẫn **OPEN/BLOCKED** theo Q10/Q11. EMPLOYEE và MANAGER không có quyền truy cập endpoint quản trị ngoại lệ; data scope được áp tại truy vấn backend.
 
 ## Hợp đồng
 

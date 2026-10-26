@@ -22,7 +22,7 @@ Repository hiện đã có ứng dụng development và `SX.xlsx` đã được 
 
 Ứng dụng nội bộ quản lý chấm công cho Công ty TNHH In Nhật Hàn. Dữ liệu nguồn chỉ dùng bảy trường: mã NV, tên NV, phòng ban, ngày chấm công, giờ vào, giờ ra, tên ca. Không dùng Công, Giờ, TC1/2/3, Ký hiệu, Vào trễ hoặc Ra sớm làm đầu vào/kỳ vọng nếu HR chưa xác nhận độc lập.
 
-Ngày chấm công là ngày bắt đầu ca theo phân ca nguồn đã duyệt (DEC-001/DEC-007), không đồng nghĩa ngày lịch của timestamp vào/ra. Theo DEC-008, Ca 3 hiện hành có khung 19:00–07:00 hôm sau; chỉ suy ngày ra hôm sau khi có bằng chứng phù hợp, dữ liệu mơ hồ chuyển `NEEDS_REVIEW` và không tính (DEC-002). Theo DEC-009/DEC-011, Ca 1 hiện hành có khung 07:00–19:00; không tính phần trước 07:00 và giờ ra dùng để tính công được hạ xuống mốc 30 phút gần nhất trong toàn ca, trong khi timestamp nguồn và chỉ tiêu về sớm vẫn dùng giờ thực tế.
+Ngày chấm công là ngày bắt đầu ca theo phân ca nguồn đã duyệt (DEC-001/DEC-007), không đồng nghĩa ngày lịch của timestamp vào/ra. Theo DEC-008, Ca 3 hiện hành có khung 19:00–07:00 hôm sau; chỉ suy ngày ra hôm sau khi có bằng chứng phù hợp, dữ liệu mơ hồ chuyển `NEEDS_REVIEW` và không tính (DEC-002). Theo DEC-009/DEC-011, Ca 1 hiện hành có khung 07:00–19:00; không tính phần trước 07:00 và giờ ra dùng để tính công được hạ xuống mốc 30 phút gần nhất trong toàn ca, trong khi timestamp nguồn và chỉ tiêu về sớm vẫn dùng giờ thực tế. Theo DEC-014, đi muộn/về sớm được tính theo lượt 0/1: Ca 1 đi muộn sau 08:01, Ca 3 đi muộn sau 22:01; về sớm giữ mốc 19:00/07:00.
 
 ## Phạm vi Phase 1 đã chốt
 
@@ -33,7 +33,7 @@ Phase 1 chỉ bao gồm:
 3. Chuẩn hóa ngày giờ khi có đủ căn cứ, kèm provenance/bằng chứng.
 4. Tính giờ làm việc thực tế và phần giao giờ nghỉ.
 5. Tính các mức 100%, 130%, 150%, 200%, 210%, 230% theo công thức đã xác nhận. Nếu `shiftDate` là Chủ nhật, toàn bộ công Ca 1 vào 200% và toàn bộ công Ca 3 vào 230%.
-6. Tính đi muộn và về sớm độc lập.
+6. Tính số lượt đi muộn và về sớm độc lập; không quy đổi thành số giờ/phút.
 7. Phát hiện, tích lũy và phân loại ngoại lệ.
 8. Chống import trùng theo chính sách từ chối toàn bộ khi phát hiện trùng.
 9. Xuất kết quả `BangCong` và `NgoaiLe`.

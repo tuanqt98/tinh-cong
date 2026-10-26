@@ -32,13 +32,50 @@ describe('ExcelParserService', () => {
     sheet.addRow(['CHI TIẾT CHẤM CÔNG']);
     sheet.addRow(['Từ ngày 01/09/2026 đến ngày 30/09/2026']);
     sheet.addRow([
-      'Mã N.Viên', 'Tên N.Viên', 'Phòng ban', 'Chức vụ', 'Ngày', 'Thứ',
-      'Vào', 'Ra', 'Công', 'Giờ', 'Công+', 'Giờ+', 'Vào trễ', 'Ra sớm',
-      'TC1', 'TC2', 'TC3', 'Tên ca', 'K.hiệu', 'K.hiệu +', 'Tổng giờ',
+      'Mã N.Viên',
+      'Tên N.Viên',
+      'Phòng ban',
+      'Chức vụ',
+      'Ngày',
+      'Thứ',
+      'Vào',
+      'Ra',
+      'Công',
+      'Giờ',
+      'Công+',
+      'Giờ+',
+      'Vào trễ',
+      'Ra sớm',
+      'TC1',
+      'TC2',
+      'TC3',
+      'Tên ca',
+      'K.hiệu',
+      'K.hiệu +',
+      'Tổng giờ',
     ]);
     sheet.addRow([
-      'SYN-001', 'Nhân viên mẫu', 'Sản xuất', '', '2026-09-01', '',
-      '08:00', '17:00', '', '', '', '', '', '', '', '', '', 'CA1', '', '', '',
+      'SYN-001',
+      'Nhân viên mẫu',
+      'Sản xuất',
+      '',
+      '2026-09-01',
+      '',
+      '08:00',
+      '17:00',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      'CA1',
+      '',
+      '',
+      '',
     ]);
 
     const result = await parser.parse(Buffer.from(await workbook.xlsx.writeBuffer()), mapping);
@@ -90,8 +127,30 @@ describe('ExcelParserService', () => {
     const sheet = workbook.addWorksheet('Xuất lưới');
     sheet.addRow(['CHI TIẾT CHẤM CÔNG']);
     sheet.addRow(['Từ ngày 01/09/2026 đến ngày 30/09/2026']);
-    sheet.addRow(['Mã N.Viên', 'Tên N.Viên', 'Phòng ban', 'Chức vụ', 'Ngày', 'Thứ', 'Vào', 'Ra', 'Công', 'Tên ca']);
-    sheet.addRow(['NV0005', 'Nguyễn Văn Đông', 'AKO', 'Nhân viên', new Date('2026-09-01T00:00:00.000Z'), 'T.3', '05:01', '', 0, 'Ca1']);
+    sheet.addRow([
+      'Mã N.Viên',
+      'Tên N.Viên',
+      'Phòng ban',
+      'Chức vụ',
+      'Ngày',
+      'Thứ',
+      'Vào',
+      'Ra',
+      'Công',
+      'Tên ca',
+    ]);
+    sheet.addRow([
+      'NV0005',
+      'Nguyễn Văn Đông',
+      'AKO',
+      'Nhân viên',
+      new Date('2026-09-01T00:00:00.000Z'),
+      'T.3',
+      '05:01',
+      '',
+      0,
+      'Ca1',
+    ]);
 
     const defaultMapping = {
       employeeCode: 'Mã NV',
@@ -103,7 +162,10 @@ describe('ExcelParserService', () => {
       shiftName: 'Tên ca',
     };
 
-    const result = await parser.parse(Buffer.from(await workbook.xlsx.writeBuffer()), defaultMapping);
+    const result = await parser.parse(
+      Buffer.from(await workbook.xlsx.writeBuffer()),
+      defaultMapping,
+    );
     expect(result.sheets).toEqual(['Xuất lưới']);
     expect(result.rows).toHaveLength(1);
     expect(result.rows[0]).toMatchObject({
@@ -115,5 +177,20 @@ describe('ExcelParserService', () => {
       shiftName: 'Ca1',
     });
     expect(result.issues.some((issue) => issue.blocking)).toBe(false);
+  });
+
+  it('không cảnh báo dòng nghỉ Chủ nhật khi cả giờ vào và giờ ra đều trống', async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Synthetic');
+    sheet.addRow(Object.values(mapping));
+    sheet.addRow(['SYN-001', 'Nhân viên mẫu', 'Sản xuất', '2026-09-06', '', '', '']);
+    sheet.addRow(['SYN-001', 'Nhân viên mẫu', 'Sản xuất', '2026-09-05', '', '', '']);
+
+    const result = await parser.parse(Buffer.from(await workbook.xlsx.writeBuffer()), mapping);
+
+    expect(result.issues.filter((issue) => issue.rowNo === 2)).toEqual([]);
+    expect(result.issues.filter((issue) => issue.rowNo === 3).map((issue) => issue.code)).toEqual(
+      expect.arrayContaining(['INVALID_SHIFT', 'NO_ATTENDANCE']),
+    );
   });
 });

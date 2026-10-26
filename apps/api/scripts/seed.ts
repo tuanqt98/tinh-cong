@@ -223,6 +223,52 @@ async function main() {
       },
     },
   });
+  await prisma.shiftRule.upsert({
+    where: { shiftId_version: { shiftId: ca1.id, version: 5 } },
+    update: {},
+    create: {
+      shiftId: ca1.id,
+      version: 5,
+      effectiveFrom: new Date('2026-09-01T00:00:00Z'),
+      scheduledStartSeconds: 25_200,
+      scheduledCompletionSeconds: 68_400,
+      breakStartSeconds: 43_200,
+      breakEndSeconds: 46_800,
+      tiers: {
+        tier100: 28_800,
+        tier150After: 28_800,
+        targetWorkedSeconds: 39_600,
+        countEarlyArrivalSeconds: false,
+        checkOutBlockSeconds: 1_800,
+        postCompletionBlockSeconds: 1_800,
+        sundayTierPercentage: 200,
+        lateAfterSeconds: 28_860,
+      },
+    },
+  });
+  await prisma.shiftRule.upsert({
+    where: { shiftId_version: { shiftId: ca3.id, version: 4 } },
+    update: {},
+    create: {
+      shiftId: ca3.id,
+      version: 4,
+      effectiveFrom: new Date('2026-09-01T00:00:00Z'),
+      scheduledStartSeconds: 68_400,
+      scheduledCompletionSeconds: 111_600,
+      breakStartSeconds: 86_400,
+      breakEndSeconds: 90_000,
+      tiers: {
+        tier100: 14_400,
+        tier130: 14_400,
+        tier210After: 28_800,
+        targetWorkedSeconds: 39_600,
+        countEarlyArrivalSeconds: false,
+        postCompletionBlockSeconds: 1_800,
+        sundayTierPercentage: 230,
+        lateAfterSeconds: 79_260,
+      },
+    },
+  });
   await prisma.attendancePeriod.upsert({
     where: { year_month: { year: 2026, month: 10 } },
     update: {},

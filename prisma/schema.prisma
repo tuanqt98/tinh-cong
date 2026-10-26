@@ -143,6 +143,7 @@ model User {
   publications      TimesheetPublication[]
   auditLogs         AuditLog[]
   employeeHistories EmployeeHistory[]
+  createdHolidays   CompanyHoliday[]
 
   @@index([active, lockedUntil])
   @@map("users")
@@ -255,6 +256,19 @@ model AttendancePeriod {
   @@unique([year, month])
   @@index([status])
   @@map("attendance_periods")
+}
+
+model CompanyHoliday {
+  id          String   @id @default(uuid()) @db.Uuid
+  holidayDate DateTime @unique @db.Date
+  name        String   @db.VarChar(255)
+  createdById String   @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  createdBy   User     @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([holidayDate])
+  @@index([createdById, createdAt])
+  @@map("company_holidays")
 }
 
 model AttendanceImport {
@@ -377,6 +391,8 @@ model AttendanceCalculation {
   workedSeconds   Int?
   lateSeconds     Int?
   earlySeconds    Int?
+  lateCount       Int?
+  earlyCount      Int?
   tier100Seconds  Int?
   tier130Seconds  Int?
   tier150Seconds  Int?

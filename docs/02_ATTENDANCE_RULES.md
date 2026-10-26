@@ -1,6 +1,6 @@
 # 02 – Quy tắc tính công và kiểm soát ngoại lệ
 
-Cập nhật ngày 24/10/2026 theo DEC-001–DEC-011. DEC-008 thay khung Ca 3 thành 19:00–07:00; DEC-009 thay khung Ca 1 thành 07:00–19:00; DEC-010 bổ sung mức Chủ nhật 200%/230%; DEC-011 áp block giờ ra 30 phút cho toàn bộ Ca 1. Ca 3 tiếp tục chỉ áp block cho phần sau 07:00.
+Cập nhật ngày 24/10/2026 theo DEC-001–DEC-013. DEC-008 thay khung Ca 3 thành 19:00–07:00; DEC-009 thay khung Ca 1 thành 07:00–19:00; DEC-010 bổ sung mức Chủ nhật 200%/230%; DEC-011 áp block giờ ra 30 phút cho toàn bộ Ca 1; DEC-012 xác nhận Chủ nhật trống cả giờ vào/ra là ngày nghỉ; DEC-013 áp cùng điều kiện trống cho ngày nghỉ lễ công ty do HR cấu hình. Ca 3 tiếp tục chỉ áp block cho phần sau 07:00.
 
 ## Biểu diễn thời gian
 
@@ -40,10 +40,10 @@ Không được giả định một ca kéo dài nhiều ngày khi nguồn thi�
 - `T100 = min(W, 28.800)`.
 - `T150 = max(W - 28.800, 0)`.
 - `T130 = T210 = 0`.
-- Đi muộn `L = max(A-S, 0)`.
-- Về sớm `E = max(39.600 - [(B-S)-overlap(S,B,R0,R1)], 0)`, với `B ≥ S`.
+- Lượt đi muộn `L = 1` khi `A > D 08:01:00`, ngược lại `L = 0`.
+- Lượt về sớm `E = 1` khi `B < C`, ngược lại `E = 0`; dùng giờ ra thực tế, không dùng `Bc` đã hạ block.
 
-Ca chuẩn 07:00–19:00 sau khi trừ một giờ nghỉ có `W=39.600` giây, tương ứng 8 giờ 100% và 3 giờ 150%. Đi muộn/về sớm độc lập; về sớm so với 19:00, dùng `B` thực tế và không dùng giờ vào thực tế. `B<S` hoặc timestamp không xác định là ngoại lệ chặn.
+Ca chuẩn 07:00–19:00 sau khi trừ một giờ nghỉ có `W=39.600` giây, tương ứng 8 giờ 100% và 3 giờ 150%. Đi muộn/về sớm là hai lượt độc lập; mỗi chỉ tiêu bằng 0 hoặc 1 trên một dòng hợp lệ. `B<S` hoặc timestamp không xác định là ngoại lệ chặn.
 
 Nếu `D` là Chủ nhật, DEC-010 thay phân bổ thường ở trên bằng `T200=W`; `T100=T130=T150=T210=T230=0`. Cách tính `Ac`, `Bc`, nghỉ, `W`, đi muộn và về sớm không đổi.
 
@@ -60,8 +60,8 @@ Nếu `D` là Chủ nhật, DEC-010 thay phân bổ thường ở trên bằng `
 - `T130 = min(max(W - 14.400, 0), 14.400)`.
 - `T210 = max(W - 28.800, 0)`.
 - `T150 = 0`.
-- Đi muộn `L = max(A-S, 0)`.
-- Về sớm `E = max(39.600 - [(B-S)-overlap(S,B,R0,R1)], 0)`, với `B ≥ S`. Chỉ tiêu này dùng `B` thực tế và độc lập với `A`.
+- Lượt đi muộn `L = 1` khi `A > D 22:01:00`, ngược lại `L = 0`.
+- Lượt về sớm `E = 1` khi `B < C`, ngược lại `E = 0`. Chỉ tiêu này dùng `B` thực tế và độc lập với `A`.
 
 Phân bổ mức theo thứ tự thời lượng được tính, không theo khung giờ đồng hồ. Ca chuẩn 19:00–07:00 sau khi trừ một giờ nghỉ có `W=39.600` giây, tương ứng 4 giờ 100%, 4 giờ 130% và 3 giờ 210%. `D+1` là khung ca chính thức, không phải quyền cộng một ngày cho mọi dòng chỉ có giờ. Vào sau nửa đêm chỉ được gắn với `D` khi có mapping/evidence tin cậy.
 
@@ -69,7 +69,7 @@ Nếu `D` là Chủ nhật, DEC-010 thay phân bổ thường ở trên bằng `
 
 ## Đi muộn, về sớm và bất biến
 
-- `L` và `E` tính độc lập; không trừ đi muộn lần thứ hai khỏi `W`.
+- `L` và `E` là số lượt 0/1, tính độc lập; không trừ đi muộn lần thứ hai khỏi `W`. Tổng hợp kỳ cộng số lượt, không đổi sang giờ/phút.
 - `W = T100 + T130 + T150 + T200 + T210 + T230`; các đại lượng không âm cho kết quả hợp lệ.
 - `R` chỉ bằng phần giao thực tế; không trừ cố định một giờ.
 - Không dùng các cột Công, Giờ, TC1/2/3, Ký hiệu, Vào trễ, Ra sớm của Excel làm đầu vào tính.
@@ -111,6 +111,7 @@ Một dòng có thể có nhiều `exception code`; phải thu thập đầy đ�
 - Có ít nhất một lỗi chặn đang mở → không được REVIEWED/APPROVED/LOCKED/chốt kỳ.
 - Mọi xử lý lưu người thực hiện, thời gian, lý do, dữ liệu trước/sau hoặc quyết định không điều chỉnh.
 - `RESOLVED` là trạng thái xử lý của ngoại lệ, không phải kết quả tính công. Chỉ sau khi validation và calculation chạy lại thành công, dòng mới có thể `VALID`.
-- Hai giờ cùng trống có thể ghi `NO_ATTENDANCE`; không tự quy thành nghỉ không phép. Việc `NO_ATTENDANCE` có chặn chốt trong từng tình huống vẫn `OPEN`.
+- Nếu `D` là Chủ nhật và cả giờ vào lẫn giờ ra đều trống, coi là ngày nghỉ theo DEC-012: giữ raw/import evidence nhưng không tạo/promote ngoại lệ hoặc calculation. Nếu Chủ nhật có một trong hai giờ thì vẫn kiểm tra thiếu giờ; nếu có đủ dữ liệu thì tính 200%/230% theo DEC-010. Với ngày khác, hai giờ cùng trống có thể ghi `NO_ATTENDANCE`; không tự quy thành nghỉ không phép và việc chặn chốt vẫn `OPEN`.
+- Nếu `D` khớp danh mục ngày nghỉ lễ công ty và cả giờ vào/ra đều trống, áp DEC-013: không cảnh báo preview, không promote ngoại lệ và không calculation; raw/audit vẫn giữ. Có dữ liệu chấm công vẫn xử lý theo rule hiện hành; chưa có quyết định tự gán hệ số lương ngày lễ.
 
 Các mã tối thiểu cần mô hình hỗ trợ: `NO_ATTENDANCE`, `MISSING_CHECKIN`, `MISSING_CHECKOUT`, `INVALID_SHIFT`, `DUPLICATE`, `MULTIPLE_ROWS_SAME_EMPLOYEE_SHIFT_DATE`, `UNRESOLVED_SHIFT_DATE`, `UNRESOLVED_CHECKOUT_DATE`, `EQUAL_CHECK_TIMES`, `NEGATIVE_DURATION`, `EXCESSIVE_DURATION`, `NEEDS_REVIEW`. Taxonomy cuối và cờ blocking phải cấu hình/version hóa sau khi được duyệt.

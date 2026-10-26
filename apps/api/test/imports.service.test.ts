@@ -19,6 +19,10 @@ type DuplicatePolicyAccess = {
   } | null;
 };
 
+type SourceStorageAccess = {
+  storeSource(buffer: Buffer): Promise<string>;
+};
+
 function createService(value: string | undefined) {
   const config = {
     get: (key: string) => (key === 'DUPLICATE_KEY_FIELDS' ? value : undefined),
@@ -195,6 +199,75 @@ describe('ImportsService duplicate key policy', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
+  it('không hiển thị cảnh báo chấm công ở preview cho ngày lễ đã cấu hình và trống hai giờ', async () => {
+    const row = {
+      sheet: 'Synthetic',
+      rowNo: 4,
+      employeeCode: 'SYN-001',
+      employeeName: 'Nhân viên synthetic',
+      departmentName: 'Phòng synthetic',
+      attendanceDate: '2026-10-02',
+      checkIn: null,
+      checkOut: null,
+      shiftName: null,
+      rawCells: {},
+    };
+    const prisma = {
+      companyHoliday: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([{ holidayDate: new Date('2026-10-02T00:00:00.000Z') }]),
+      },
+      attendanceImport: {
+        create: vi.fn().mockResolvedValue({ id: 'import-holiday', status: 'PREVIEW' }),
+      },
+    };
+    const parser = {
+      parseMapping: vi.fn().mockReturnValue({
+        employeeCode: 'Mã N.Viên',
+        employeeName: 'Tên N.Viên',
+        departmentName: 'Phòng ban',
+        attendanceDate: 'Ngày',
+        checkIn: 'Vào',
+        checkOut: 'Ra',
+        shiftName: 'Tên ca',
+      }),
+      parse: vi.fn().mockResolvedValue({
+        rows: [row],
+        sheets: ['Synthetic'],
+        issues: [
+          { sheet: 'Synthetic', rowNo: 4, code: 'INVALID_SHIFT', blocking: false },
+          { sheet: 'Synthetic', rowNo: 4, code: 'NO_ATTENDANCE', blocking: false },
+        ],
+      }),
+    };
+    const service = new ImportsService(
+      prisma as never,
+      { get: () => 'employeeCode,attendanceDate,shiftName' } as never,
+      parser as never,
+    );
+    vi.spyOn(service as unknown as SourceStorageAccess, 'storeSource').mockResolvedValue(
+      'synthetic-holiday.xlsx',
+    );
+
+    const result = await service.preview(
+      {
+        originalname: 'synthetic-holiday.xlsx',
+        mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        size: 9,
+        buffer: Buffer.from('synthetic'),
+      },
+      '{}',
+      { id: 'hr-1', username: 'hr', employeeId: null, roles: ['HR'] },
+    );
+
+    expect(result.issues).toEqual([]);
+    expect(result.canConfirm).toBe(true);
+    expect(prisma.attendanceImport.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ issues: { create: [] } }) }),
+    );
+  });
+
   it('ánh xạ đúng alias Ca1 và Ca3 đã được duyệt', () => {
     const service = createService('employeeCode,attendanceDate,shiftName');
 
@@ -238,8 +311,8 @@ describe('ImportsService duplicate key policy', () => {
             active: true,
             rules: [
               {
-                id: 'rule-ca1-v4',
-                version: 4,
+                id: 'rule-ca1-v5',
+                version: 5,
                 effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
                 effectiveTo: null,
                 scheduledStartSeconds: 25_200,
@@ -255,6 +328,7 @@ describe('ImportsService duplicate key policy', () => {
                   checkOutBlockSeconds: 1_800,
                   postCompletionBlockSeconds: 1_800,
                   sundayTierPercentage: 200,
+                  lateAfterSeconds: 28_860,
                 },
               },
             ],

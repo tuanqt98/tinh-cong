@@ -13,10 +13,16 @@ import {
   IsUUID,
   Max,
   MaxLength,
+  Matches,
   Min,
   ValidateNested,
 } from 'class-validator';
-import { EmployeeStatus, PeriodStatus, RoleCode } from '../generated/prisma/index.js';
+import {
+  EmployeeStatus,
+  ExceptionStatus,
+  PeriodStatus,
+  RoleCode,
+} from '../generated/prisma/index.js';
 
 export class PaginationDto {
   @IsOptional()
@@ -36,6 +42,57 @@ export class PaginationDto {
   @IsString()
   @MaxLength(255)
   search?: string;
+}
+
+export class ExceptionQueryDto extends PaginationDto {
+  @IsOptional()
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
+  month?: string;
+
+  @IsOptional()
+  @IsUUID()
+  periodId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  departmentId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  shiftCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  code?: string;
+
+  @IsOptional()
+  @IsIn(['BLOCKING', 'WARNING', 'INFO'])
+  severity?: 'BLOCKING' | 'WARNING' | 'INFO';
+
+  @IsOptional()
+  @IsEnum(ExceptionStatus)
+  status?: ExceptionStatus;
+}
+
+export class ExceptionPreviewDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  shiftCode?: string | null;
+
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  shiftDate?: string | null;
+
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  checkInAt?: string | null;
+
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  checkOutAt?: string | null;
 }
 
 export class EmployeeQueryDto extends PaginationDto {
@@ -273,6 +330,22 @@ export class CreateShiftDto {
   @IsNotEmpty()
   @MaxLength(50)
   code: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  name: string;
+}
+
+export class CompanyHolidayQueryDto {
+  @IsOptional()
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
+  month?: string;
+}
+
+export class CreateCompanyHolidayDto {
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  holidayDate: string;
 
   @IsString()
   @IsNotEmpty()

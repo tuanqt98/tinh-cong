@@ -14,9 +14,9 @@ Hệ thống được bảo vệ bằng các chốt chặn an toàn (fail-closed
 | Hạng mục kiểm thử                | Lệnh thực hiện                                       | Kết quả thực tế                 | Ghi chú                                                                                              |
 | -------------------------------- | ---------------------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | **Engine Unit Tests**            | `pnpm.cmd test:run` (engine)                         | **39/39 PASS** (2 files)        | Tính công số nguyên giây, block giờ ra Ca 1, bảo toàn sáu tier và Chủ nhật theo DEC-008–011          |
-| **API Unit & Service Tests**     | `pnpm.cmd test:run` (api)                            | **32/32 PASS** (8 files)        | Detail/PDF, guard kỳ bất biến và revision mới                                                        |
-| **PostgreSQL Integration Tests** | migration + seed DB mới; `pnpm.cmd test:integration` | **13/13 PASS** (1 file)         | PostgreSQL 16 thật; sáu migration, Ca 1 rule v4, Chủ nhật 200%/230%, report và RBAC scope            |
-| **Browser E2E Tests**            | `pnpm.cmd test:e2e`                                  | **20/20 PASS** (Chromium)       | Bảng công tổng hợp + Chi tiết bảng công, PDF, tabs, mobile và visual QA 1536×1024                    |
+| **API Unit & Service Tests**     | `pnpm.cmd test:run` (api)                            | **36/36 PASS** (8 files)        | Màn 07, ngày nghỉ Chủ nhật, preview và pipeline ngày lễ                                              |
+| **PostgreSQL Integration Tests** | migration + seed DB mới; `pnpm.cmd test:integration` | **15/15 PASS**                  | Thêm HR cấu hình ngày lễ, revalidation, RBAC và guard xóa; DB tạm đã xóa                             |
+| **Browser E2E Tests**            | `pnpm.cmd test:e2e`                                  | **23/23 PASS** (Chromium)       | Thêm màn cấu hình ngày nghỉ lễ theo tháng                                                            |
 | **ESLint**                       | `pnpm.cmd lint`                                      | **PASS, 0 warning**             | Flat config kiểm tra TypeScript/React/Node thật; không còn lint no-op                                |
 | **TypeScript Typecheck**         | `pnpm.cmd typecheck`                                 | **PASS** (5 workspace packages) | `@tinh-cong/attendance-engine`, `shared`, `ui`, `api`, `web`                                         |
 | **Production Build**             | `pnpm.cmd build`                                     | **PASS** (toàn monorepo)        | Build Vite web bundle và NestJS API distribution                                                     |
@@ -24,7 +24,7 @@ Hệ thống được bảo vệ bằng các chốt chặn an toàn (fail-closed
 | **Synthetic Scale Benchmark**    | `pnpm.cmd test:performance`                          | **PASS** (1.000 NV)             | Query: 16,72 ms, Engine: 5,66 ms, Tổng: 2.386,99 ms                                                  |
 | **Backup & SHA-256**             | `scripts/backup.ps1`                                 | **PASS**                        | Tạo bản sao lưu SQL và mã băm SHA-256 thành công                                                     |
 
-Tổng số test tự động ở lần chạy cuối sau khi nạp đủ biến môi trường: **104 PASS**, 0 FAIL, 0 SKIP (`39 engine + 32 API + 13 integration + 20 E2E`). Integration DEC-011 đạt 13/13 trên DB mới sau đủ sáu migration và seed; DB tạm đã được xóa. Chi tiết ở `TEST_REPORT.md`.
+Gate mới nhất đạt **113 PASS** (`39 engine + 36 API + 15 PostgreSQL integration + 23 E2E`), 0 FAIL, 0 SKIP. PostgreSQL mới áp đủ bảy migration, seed synthetic, chạy 15/15 và DB tạm đã xóa. Chi tiết ở `TEST_REPORT.md`.
 
 Màn Import Excel đã được xây dựng lại theo mockup: sidebar/topbar dùng chung, stepper động, upload kéo-thả, mapping bảy trường, validation summary, preview/search/filter/export lỗi/phân trang, action bar và view lịch sử. Ảnh bằng chứng trước/sau ở `docs/ui-reference/`. Chưa tuyên bố pixel-perfect vì chưa có automated image-diff threshold và chưa có logo chính thức.
 
@@ -39,6 +39,12 @@ DEC-009 đã được triển khai bằng rule Ca 1 v2 hiệu lực từ 01/09/2
 DEC-010 đã được triển khai bằng rule v3 cho cả hai ca hiệu lực từ 01/09/2026: nếu `shiftDate` là Chủ nhật, toàn bộ công Ca 1 vào 200% và toàn bộ công Ca 3 vào 230%; các tier khác bằng 0. Schema, API, dashboard, tổng hợp/chi tiết, Excel và PDF đều đã có hai tier mới. Runtime development đã áp đủ năm migration, cập nhật API/web qua writable layer và tính lại `SX.xlsx`; image Dockerfile tái lập và HR/UAT vẫn PARTIAL/BLOCKED.
 
 DEC-011 đã được triển khai bằng Ca 1 rule v4 hiệu lực từ 01/09/2026: giờ ra tính công được hạ xuống block 30 phút gần nhất trong toàn ca, còn raw/về sớm giữ giờ thực tế. Runtime development đã áp migration thứ sáu và tính lại `SX.xlsx`; dòng NV0001 ngày 25/09 raw `06:37–18:11` hiện có 36.000 giây công, revision 4. Image Dockerfile tái lập và HR/UAT vẫn PARTIAL/BLOCKED.
+
+DEC-014 đã chuyển đi muộn/về sớm sang số lượt: Ca 1 chỉ muộn sau 08:01, Ca 3 chỉ muộn sau 22:01; về sớm giữ mốc raw 19:00/07:00. Runtime development đã backup, áp migration thứ tám, cập nhật artifact và tính lại `SX.xlsx` thành 1.726 latest calculation bằng engine `2026-10-26-dec014`; summary tháng 09 có 3 lượt muộn và 730 lượt sớm. Image Dockerfile tái lập và HR/UAT vẫn PARTIAL/BLOCKED.
+
+DEC-012 xác nhận Chủ nhật trống cả giờ vào/ra là ngày nghỉ: không tạo/promote ngoại lệ hoặc calculation, raw/import evidence vẫn giữ. Runtime development đã revalidate 296 dòng thành 0 ngoại lệ OPEN và 0 calculation; API mặc định tháng 09 còn 743 bản ghi OPEN. Backup được tạo trước xử lý; image Dockerfile tái lập vẫn PARTIAL.
+
+DEC-013 xác nhận HR/ADMIN được cấu hình ngày nghỉ lễ toàn công ty. Ngày lễ trống cả giờ vào/ra không tạo cảnh báo/calculation; ngoại lệ lịch sử được resolve có audit. UI Màn 11 đã thay trang JSON bằng rule ca + danh mục ngày lễ. Migration thứ bảy đã áp runtime development sau backup; API/web health và authenticated smoke PASS. Chưa thêm ngày lễ thật vì chưa có ngày cụ thể; Dockerfile image vẫn PARTIAL.
 
 ## 3. Các lỗi kỹ thuật đã phát hiện và tự động khắc phục
 

@@ -17,6 +17,8 @@ import type { PaginationDto } from '../core/dto.js';
 import { ExcelParserService } from './excel-parser.service.js';
 import {
   SOURCE_FIELDS,
+  isBlankAttendance,
+  isSundayRestWithoutAttendance,
   type ColumnMapping,
   type ParsedSourceRow,
   type SourceField,
@@ -68,6 +70,7 @@ const SHIFT_DEFINITIONS: Record<
       checkOutBlockSeconds: 1_800,
       postCompletionBlockSeconds: 1_800,
       sundayTierPercentage: 200,
+      lateAfterSeconds: 28_860,
     },
   },
   CA3: {
@@ -86,6 +89,7 @@ const SHIFT_DEFINITIONS: Record<
       countEarlyArrivalSeconds: false,
       postCompletionBlockSeconds: 1_800,
       sundayTierPercentage: 230,
+      lateAfterSeconds: 79_260,
     },
   },
 };
@@ -102,6 +106,31 @@ export class ImportsService {
     this.assertWorkbook(file);
     const mapping = this.parser.parseMapping(mappingText);
     const parsed = await this.parser.parse(file.buffer, mapping);
+    const companyHolidayDates = await this.companyHolidayDates(
+      parsed.rows.flatMap((row) => (row.attendanceDate ? [row.attendanceDate] : [])),
+    );
+    const companyHolidayRestRows = new Set(
+      parsed.rows
+        .filter(
+          (row) =>
+            Boolean(row.attendanceDate && companyHolidayDates.has(row.attendanceDate)) &&
+            isBlankAttendance(row),
+        )
+        .map((row) => `${row.sheet}\u0000${row.rowNo}`),
+    );
+    const restAttendanceIssueCodes = new Set([
+      'INVALID_SHIFT',
+      'NO_ATTENDANCE',
+      'MISSING_CHECKIN',
+      'MISSING_CHECKOUT',
+    ]);
+    const issues = parsed.issues.filter(
+      (issue) =>
+        !(
+          companyHolidayRestRows.has(`${issue.sheet}\u0000${issue.rowNo}`) &&
+          restAttendanceIssueCodes.has(issue.code)
+        ),
+    );
     const duplicateKeyFields = this.duplicateKeyFields();
     const duplicateRuleConfigured = duplicateKeyFields.length > 0;
     const sha256 = createHash('sha256').update(file.buffer).digest('hex');
@@ -123,7 +152,7 @@ export class ImportsService {
           duplicateRuleConfigured,
         } as unknown as Prisma.InputJsonValue,
         issues: {
-          create: parsed.issues.map((issue) => ({
+          create: issues.map((issue) => ({
             sheet: issue.sheet,
             rowNo: issue.rowNo,
             issueCode: issue.code,
@@ -140,9 +169,9 @@ export class ImportsService {
       sheets: parsed.sheets,
       rowCount: parsed.rows.length,
       previewRows: parsed.rows.slice(0, 100),
-      issues: parsed.issues,
+      issues,
       duplicateRuleConfigured,
-      canConfirm: !parsed.issues.some((issue) => issue.blocking) && duplicateRuleConfigured,
+      canConfirm: !issues.some((issue) => issue.blocking) && duplicateRuleConfigured,
     };
   }
 
@@ -373,7 +402,40 @@ export class ImportsService {
       throw new ConflictException('Chỉ xử lý import đã ACCEPTED.');
     }
 
-    const employeeCodes = [...new Set(record.rawRows.map((row) => row.employeeCode))];
+    const sourceDates = [
+      ...new Set(
+        record.rawRows.flatMap((raw) =>
+          raw.attendanceDateRaw && /^\d{4}-\d{2}-\d{2}$/.test(raw.attendanceDateRaw)
+            ? [raw.attendanceDateRaw]
+            : [],
+        ),
+      ),
+    ];
+    const companyHolidayDates = await this.companyHolidayDates(sourceDates);
+    const sundayRestRowIds = new Set(
+      record.rawRows
+        .filter((raw) =>
+          isSundayRestWithoutAttendance({
+            attendanceDate: raw.attendanceDateRaw,
+            checkIn: raw.checkInRaw,
+            checkOut: raw.checkOutRaw,
+          }),
+        )
+        .map((raw) => raw.id),
+    );
+    const companyHolidayRestRowIds = new Set(
+      record.rawRows
+        .filter(
+          (raw) =>
+            !sundayRestRowIds.has(raw.id) &&
+            Boolean(raw.attendanceDateRaw && companyHolidayDates.has(raw.attendanceDateRaw)) &&
+            isBlankAttendance({ checkIn: raw.checkInRaw, checkOut: raw.checkOutRaw }),
+        )
+        .map((raw) => raw.id),
+    );
+    const restRowIds = new Set([...sundayRestRowIds, ...companyHolidayRestRowIds]);
+    const attendanceRows = record.rawRows.filter((raw) => !restRowIds.has(raw.id));
+    const employeeCodes = [...new Set(attendanceRows.map((row) => row.employeeCode))];
     const employees = await this.prisma.employee.findMany({
       where: { code: { in: employeeCodes }, active: true },
       select: { id: true, code: true },
@@ -408,10 +470,13 @@ export class ImportsService {
       ]),
     );
     const exceptionData: Prisma.AttendanceExceptionCreateManyInput[] = [];
+    let promotedImportIssues = 0;
 
     for (const issue of record.issues) {
-      if (existingKeys.has(`issue:${issue.id}`)) continue;
       const raw = rawBySource.get(`${issue.sheet}\u0000${issue.rowNo}`);
+      if (raw && restRowIds.has(raw.id)) continue;
+      promotedImportIssues++;
+      if (existingKeys.has(`issue:${issue.id}`)) continue;
       const evidence = issue.evidence as { blocking?: boolean } | null;
       exceptionData.push({
         ...(raw ? { rawId: raw.id } : {}),
@@ -426,7 +491,7 @@ export class ImportsService {
     const linkedRows: Array<RawRow & { employeeId: string }> = [];
     let missingEmployees = 0;
     const missingEmployeeCodes = new Set<string>();
-    for (const raw of record.rawRows) {
+    for (const raw of attendanceRows) {
       const employeeId = employeeByCode.get(raw.employeeCode);
       if (!employeeId) {
         const key = `raw:${raw.id}:EMPLOYEE_NOT_FOUND`;
@@ -449,6 +514,8 @@ export class ImportsService {
       await this.prisma.attendanceException.createMany({ data: exceptionData });
     }
 
+    await this.resolveRestDayExceptions(user.id, sundayRestRowIds, companyHolidayRestRowIds);
+
     await this.resolveRecoveredExceptions(
       user.id,
       new Map([['EMPLOYEE_NOT_FOUND', new Set(linkedRows.map((row) => row.id))]]),
@@ -458,12 +525,15 @@ export class ImportsService {
     const calculationSummary = await this.processLinkedRows(linkedRows, existingKeys, user.id);
     const summary = {
       rawRows: record.rawRows.length,
+      restRows: restRowIds.size,
+      sundayRestRows: sundayRestRowIds.size,
+      companyHolidayRestRows: companyHolidayRestRowIds.size,
       linkedEmployees: linkedRows.length,
       missingEmployees,
       missingEmployeeCodes: [...missingEmployeeCodes].sort((left, right) =>
         left.localeCompare(right, 'vi-VN'),
       ),
-      promotedImportIssues: record.issues.length,
+      promotedImportIssues,
       ...calculationSummary,
     };
     await this.prisma.auditLog.create({
@@ -1002,6 +1072,10 @@ export class ImportsService {
         tiers.sundayTierPercentage === 200 || tiers.sundayTierPercentage === 230
           ? tiers.sundayTierPercentage
           : null,
+      lateAfterSeconds:
+        typeof tiers.lateAfterSeconds === 'number'
+          ? tiers.lateAfterSeconds
+          : rule.scheduledStartSeconds,
     };
   }
 
@@ -1228,6 +1302,54 @@ export class ImportsService {
 
   private sourceDepartmentCode(name: string) {
     return `SX-${createHash('sha256').update(name.normalize('NFC')).digest('hex').slice(0, 16).toUpperCase()}`;
+  }
+
+  private async companyHolidayDates(values: string[]) {
+    const dates = [...new Set(values.filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value)))];
+    if (!dates.length) return new Set<string>();
+    const holidays = await this.prisma.companyHoliday.findMany({
+      where: {
+        holidayDate: {
+          in: dates.map((date) => new Date(`${date}T00:00:00.000Z`)),
+        },
+      },
+      select: { holidayDate: true },
+    });
+    return new Set(holidays.map((holiday) => holiday.holidayDate.toISOString().slice(0, 10)));
+  }
+
+  private async resolveRestDayExceptions(
+    actorId: string,
+    sundayRawIds: Set<string>,
+    companyHolidayRawIds: Set<string>,
+  ) {
+    const rawIds = new Set([...sundayRawIds, ...companyHolidayRawIds]);
+    if (!rawIds.size) return;
+    const exceptions = await this.prisma.attendanceException.findMany({
+      where: { status: 'OPEN', rawId: { in: [...rawIds] } },
+      select: { id: true, rawId: true },
+    });
+    if (!exceptions.length) return;
+    await this.prisma.$transaction([
+      this.prisma.exceptionResolution.createMany({
+        data: exceptions.map((item) => ({
+          exceptionId: item.id,
+          action: companyHolidayRawIds.has(item.rawId ?? '')
+            ? 'REVALIDATED_COMPANY_HOLIDAY'
+            : 'REVALIDATED_SUNDAY_REST',
+          before: { status: 'OPEN' },
+          after: { status: 'RESOLVED' },
+          reason: companyHolidayRawIds.has(item.rawId ?? '')
+            ? 'Ngày được HR cấu hình là ngày nghỉ lễ; dòng không có cả giờ vào và giờ ra không cần xử lý ngoại lệ.'
+            : 'Chủ nhật là ngày nghỉ; dòng không có cả giờ vào và giờ ra không cần xử lý ngoại lệ.',
+          actorId,
+        })),
+      }),
+      this.prisma.attendanceException.updateMany({
+        where: { id: { in: exceptions.map((item) => item.id) } },
+        data: { status: 'RESOLVED' },
+      }),
+    ]);
   }
 
   private async resolveRecoveredExceptions(actorId: string, recovered: Map<string, Set<string>>) {

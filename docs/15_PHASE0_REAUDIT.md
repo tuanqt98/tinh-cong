@@ -28,6 +28,7 @@ Không quyết định nào bị diễn giải thành quyền tự suy quy tắc
 - Phân bổ ngày thường nêu trên đã được DEC-010 ngày 23/10/2026 bổ sung ngoại lệ Chủ nhật theo ngày bắt đầu ca: toàn bộ Ca 1 ở mức 200%, toàn bộ Ca 3 ở mức 230%; các tier khác bằng 0.
 - DEC-011 ngày 24/10/2026 tiếp tục mở rộng block giờ ra Ca 1 thành block 30 phút trong toàn ca; timestamp nguồn và chỉ tiêu về sớm vẫn dùng giờ thực tế.
 - Đi muộn/về sớm độc lập; thời gian công dựa trên vào/ra thực tế và chỉ trừ phần giao giờ nghỉ.
+- DEC-014 ngày 26/10/2026 thay đơn vị đi muộn/về sớm thành lượt 0/1; Ca 1 muộn sau 08:01, Ca 3 muộn sau 22:01, về sớm giữ mốc 19:00/07:00.
 - Nội bộ số nguyên giây; không làm tròn, không nhân hệ số vào duration.
 
 Kết luận: không có thay đổi công thức trong đợt cập nhật này.

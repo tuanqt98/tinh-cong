@@ -17,8 +17,8 @@ const rows = Array.from({ length: 10 }, (_, index) => ({
   tier200Seconds: 0,
   tier210Seconds: 0,
   tier230Seconds: 0,
-  lateSeconds: index * 60,
-  earlySeconds: index * 30,
+  lateCount: index % 3 === 0 ? 1 : 0,
+  earlyCount: index % 4 === 0 ? 1 : 0,
   workingDays: null,
   attendanceDays: 1,
   exceptionCount: index === 1 ? 1 : 0,
@@ -38,8 +38,8 @@ const totals = rows.reduce(
     tier200Seconds: result.tier200Seconds + row.tier200Seconds,
     tier210Seconds: result.tier210Seconds + row.tier210Seconds,
     tier230Seconds: result.tier230Seconds + row.tier230Seconds,
-    lateSeconds: result.lateSeconds + row.lateSeconds,
-    earlySeconds: result.earlySeconds + row.earlySeconds,
+    lateCount: result.lateCount + row.lateCount,
+    earlyCount: result.earlyCount + row.earlyCount,
     attendanceDays: result.attendanceDays + row.attendanceDays,
     exceptionCount: result.exceptionCount + row.exceptionCount,
   }),
@@ -53,8 +53,8 @@ const totals = rows.reduce(
     tier200Seconds: 0,
     tier210Seconds: 0,
     tier230Seconds: 0,
-    lateSeconds: 0,
-    earlySeconds: 0,
+    lateCount: 0,
+    earlyCount: 0,
     attendanceDays: 0,
     exceptionCount: 0,
   },
@@ -85,8 +85,8 @@ const detailRows = Array.from({ length: 15 }, (_, index) => {
     tier200Seconds: index === 10 ? null : 0,
     tier210Seconds: index === 10 ? null : 0,
     tier230Seconds: index === 10 ? null : 0,
-    lateSeconds: index === 10 ? null : index % 5 === 0 ? 300 : 0,
-    earlySeconds: index === 10 ? null : 0,
+    lateCount: index === 10 ? null : index % 5 === 0 ? 1 : 0,
+    earlyCount: index === 10 ? null : 0,
     exceptions:
       index === 10
         ? [{ id: 'exception-1', code: 'MULTIPLE_ROWS', blocking: true, status: 'OPEN' }]
@@ -116,8 +116,8 @@ const detailTotals = detailRows.reduce(
     result.tier200Seconds += row.tier200Seconds ?? 0;
     result.tier210Seconds += row.tier210Seconds ?? 0;
     result.tier230Seconds += row.tier230Seconds ?? 0;
-    result.lateSeconds += row.lateSeconds ?? 0;
-    result.earlySeconds += row.earlySeconds ?? 0;
+    result.lateCount += row.lateCount ?? 0;
+    result.earlyCount += row.earlyCount ?? 0;
     result.attendanceDays += 1;
     return result;
   },
@@ -129,8 +129,8 @@ const detailTotals = detailRows.reduce(
     tier200Seconds: 0,
     tier210Seconds: 0,
     tier230Seconds: 0,
-    lateSeconds: 0,
-    earlySeconds: 0,
+    lateCount: 0,
+    earlyCount: 0,
     attendanceDays: 0,
     exceptionCount: 0,
   },
@@ -303,6 +303,8 @@ test('render bảng công tổng hợp từ API và lưu visual evidence 1536x10
   await expect(page.locator('thead th')).toHaveCount(20);
   await expect(page.locator('thead th', { hasText: 'Giờ 200%' })).toBeVisible();
   await expect(page.locator('thead th', { hasText: 'Giờ 230%' })).toBeVisible();
+  await expect(page.locator('thead th', { hasText: 'Lượt đi muộn' })).toBeVisible();
+  await expect(page.locator('thead th', { hasText: 'Lượt về sớm' })).toBeVisible();
   await expect(page.getByText('Tổng cộng toàn bộ tập lọc')).toBeVisible();
   await expect(page.getByText('N/A').first()).toHaveAttribute('title', /Chưa có lịch/);
   await expect(page.getByText('Dữ liệu kỳ này chưa chốt')).toBeVisible();

@@ -9,6 +9,7 @@ const emptyApiPaths = [
   '/publications',
   '/me/timesheets',
   '/shifts',
+  '/company-holidays',
   '/audit-logs',
 ];
 
@@ -120,8 +121,8 @@ test.beforeEach(async ({ page }) => {
             tier200Seconds: 0,
             tier210Seconds: 0,
             tier230Seconds: 0,
-            lateSeconds: 0,
-            earlySeconds: 0,
+            lateCount: 0,
+            earlyCount: 0,
             attendanceDays: 0,
             exceptionCount: 0,
           },

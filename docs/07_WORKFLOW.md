@@ -43,6 +43,8 @@ flowchart TD
 - Nhiều dòng cùng mã NV/ngày ca được giữ riêng, tạo ngoại lệ và không cộng/ghép/tổng hợp trước HR xác nhận (DEC-004).
 - `A=B`, duration âm sau chuẩn hóa có căn cứ hoặc hiện diện > ngưỡng cấu hình mặc định 16 giờ → HR review, không tự sửa (DEC-005).
 - Validation không dừng ở lỗi đầu tiên. Một dòng lưu mọi mã lỗi; có lỗi cần HR thì hiển thị `NEEDS_REVIEW` (DEC-006).
+- Riêng ngày Chủ nhật có cả giờ vào/ra trống là ngày nghỉ theo DEC-012: giữ raw/import evidence nhưng không promote lỗi, không tạo calculation. Ngoại lệ lịch sử được revalidate có actor/reason; ngày khác hoặc chỉ thiếu một giờ vẫn fail-closed như trước.
+- Ngày nghỉ lễ toàn công ty do HR/ADMIN cấu hình theo DEC-013 áp cùng điều kiện cả hai giờ trống. Tạo ngày lễ revalidate ngay ngoại lệ lịch sử; kỳ `LOCKED/PUBLISHED` không được sửa và không xóa cấu hình đã có raw import.
 - Chỉ dòng có timestamp/ngày ca tin cậy và không có lỗi chặn mới được tính/đưa vào `BangCong`. `NgoaiLe` phải truy vết về file/sheet/dòng và mã lỗi.
 - `RESOLVED` chỉ là hành động xử lý ngoại lệ; phải validation/calculation lại thành công trước khi dòng hợp lệ.
 
@@ -60,3 +62,11 @@ Tại mọi bước chốt về sau:
 ## Bằng chứng và trạng thái test
 
 Mỗi lần chạy phải lưu command, version, input hash/fixture, actual/expected và artifact. Unit/integration/E2E synthetic đã chạy theo `TEST_REPORT.md`; UAT và đối chiếu `SX.xlsx` vẫn `BLOCKED`. Workflow phụ thuộc Q10/Q11 mặc định tắt, không phải luồng đã nghiệm thu.
+
+# Màn 07 — trạng thái workflow ngoại lệ (24/10/2026)
+
+- Mô hình hiện hành vẫn là `OPEN`/`RESOLVED`; không tự thay bằng workflow đề xuất khác khi chưa có phê duyệt.
+- Q12 được giữ: một raw có nhiều exception; chỉ được coi đã xử lý khi mọi lỗi chặn liên quan đã được revalidate và calculation hợp lệ.
+- Preview là read-only, trả `persisted=false`; không tạo revision, không sửa raw và không đổi trạng thái kỳ.
+- Do Q10/Q11 còn OPEN, `WORKFLOW_ENABLED=false` tiếp tục khóa mutation. Endpoint review cũ nay trả 409 thay vì tự đánh dấu `RESOLVED` thiếu revalidation.
+- Kỳ LOCKED/PUBLISHED không mở form lưu và không thay snapshot cũ. Luồng adjustment transaction, optimistic locking và commit recalculation vẫn BLOCKED chờ Q10/Q11.

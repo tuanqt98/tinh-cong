@@ -86,7 +86,7 @@ Quy ước trạng thái đánh giá lại:
 - **Hiệu lực tính toán:** từ ngày công 01/09/2026; áp dụng bằng một `shift_rule` version mới, không sửa hoặc xóa rule/calculation lịch sử và không tự backdate cho dữ liệu trước ngày này.
 - **Nội dung:** Ca 3 có khung chuẩn `D 19:00–D+1 07:00`, nghỉ `D+1 00:00–01:00`. Timestamp quẹt thẻ thực tế phải được giữ nguyên. Nếu vào trước 19:00 thì thời gian được tính chỉ bắt đầu từ 19:00. Nếu ra sau 07:00 thì phần sau 07:00 chỉ được ghi nhận theo từng khối đủ 30 phút: ra 07:15 tính đến 07:00; ra 07:30 tính thêm 30 phút; phần lẻ tiếp theo chưa đủ khối không được tính. Không làm tròn timestamp nguồn.
 - **Phân bổ:** 4 giờ đầu ở mức 100%, 4 giờ tiếp theo ở mức 130%, phần vượt 8 giờ ở mức 210%; mức 150% bằng 0. Vì khung chuẩn có 11 giờ làm việc sau khi trừ nghỉ, một ca đủ 19:00–07:00 tạo 4 giờ 100%, 4 giờ 130% và 3 giờ 210%.
-- **Đi muộn/về sớm:** đi muộn tính từ 19:00 theo giờ vào thực tế; về sớm so với 07:00 và không dùng giờ vào thực tế. Hai chỉ tiêu độc lập.
+- **Đi muộn/về sớm:** nội dung ban đầu dùng mốc 19:00 và thời lượng đã được DEC-014 thay thế từ ngày hiệu lực. Mốc về sớm 07:00 và nguyên tắc độc lập với giờ vào vẫn giữ nguyên.
 - **Audit/revision:** thay đổi rule phải sinh calculation revision mới có rule/engine version và input hash; raw/normalization timestamp thực tế không bị làm tròn hoặc ghi đè. Kỳ `LOCKED/PUBLISHED` không được tính lại trực tiếp.
 - **Quan hệ quyết định:** DEC-008 thay thế phần mốc giờ 22:00 của DEC-001/DEC-002 và tài liệu nguồn trước đó; nguyên tắc ngày ca, evidence D+1 và fail-closed vẫn giữ nguyên.
 - **Tài liệu liên quan:** `02_ATTENDANCE_RULES.md`, `08_TEST_CASES.md`, `12_OPEN_QUESTIONS.md`, `13_PROGRESS_REPORT.md`, `TEST_REPORT.md`.
@@ -99,7 +99,7 @@ Quy ước trạng thái đánh giá lại:
 - **Hiệu lực tính toán:** từ ngày công 01/09/2026; áp dụng bằng một `shift_rule` version mới, không sửa hoặc xóa rule/calculation lịch sử và không tự backdate cho dữ liệu trước ngày này.
 - **Nội dung:** Ca 1 có khung chuẩn `D 07:00–D 19:00`, nghỉ `D 12:00–13:00`. Timestamp quẹt thẻ thực tế phải được giữ nguyên. Nếu vào trước 07:00 thì thời gian được tính chỉ bắt đầu từ 07:00. Nếu ra sau 19:00 thì phần sau 19:00 chỉ được ghi nhận theo từng khối đủ 30 phút: ra 19:20 tính đến 19:00; ra 19:30 tính thêm 30 phút; phần lẻ tiếp theo chưa đủ khối không được tính. Không làm tròn timestamp nguồn.
 - **Phân bổ:** 8 giờ đầu ở mức 100%, phần vượt 8 giờ ở mức 150%; mức 130% và 210% bằng 0. Vì khung chuẩn có 11 giờ làm việc sau khi trừ nghỉ, một ca đủ 07:00–19:00 tạo 8 giờ 100% và 3 giờ 150%.
-- **Đi muộn/về sớm:** đi muộn tính từ 07:00 theo giờ vào thực tế; về sớm so với 19:00 và không dùng giờ vào thực tế. Hai chỉ tiêu độc lập.
+- **Đi muộn/về sớm:** nội dung ban đầu dùng mốc 07:00 và thời lượng đã được DEC-014 thay thế từ ngày hiệu lực. Mốc về sớm 19:00 và nguyên tắc độc lập với giờ vào vẫn giữ nguyên.
 - **Audit/revision:** thay đổi rule phải sinh calculation revision mới có rule/engine version và input hash; raw/normalization timestamp thực tế không bị làm tròn hoặc ghi đè. Kỳ `LOCKED/PUBLISHED` không được tính lại trực tiếp.
 - **Quan hệ quyết định:** DEC-009 thay thế khung Ca 1 08:00–17:00 trong tài liệu trước đó từ ngày hiệu lực; nguyên tắc evidence và fail-closed vẫn giữ nguyên.
 - **Tài liệu liên quan:** `01_BUSINESS_REQUIREMENTS.md`, `02_ATTENDANCE_RULES.md`, `08_TEST_CASES.md`, `13_PROGRESS_REPORT.md`, `TEST_REPORT.md`.
@@ -124,24 +124,60 @@ Quy ước trạng thái đánh giá lại:
 - **Người xác nhận:** Chủ dự án.
 - **Hiệu lực tính toán:** từ ngày công 01/09/2026; áp dụng bằng Ca 1 `shift_rule` version 4, không sửa hoặc xóa rule/calculation lịch sử và không tự backdate cho dữ liệu trước ngày này.
 - **Nội dung:** với Ca 1, giờ ra dùng để tính công được hạ xuống mốc 30 phút gần nhất trong toàn bộ ca, neo từ 07:00. Vì vậy `06:37–18:11` tính khoảng `07:00–18:00`; ra 18:40 tính đến 18:30; ra 19:20 tính đến 19:00; ra 19:30 giữ 19:30. Giờ vào trước 07:00 tiếp tục chỉ được tính từ 07:00.
-- **Dữ liệu nguồn và chỉ tiêu độc lập:** timestamp vào/ra raw và normalization giữ nguyên, không bị làm tròn hoặc ghi đè. Đi muộn và về sớm tiếp tục dùng timestamp thực tế; riêng về sớm vẫn so với 19:00 và độc lập với thời gian được tính công. Do đó `18:11` có thể được tính công đến 18:00 nhưng về sớm vẫn là 49 phút.
+- **Dữ liệu nguồn và chỉ tiêu độc lập:** timestamp vào/ra raw và normalization giữ nguyên, không bị làm tròn hoặc ghi đè. Theo DEC-014, `18:11` có thể được tính công đến 18:00 và đồng thời tạo một lượt về sớm vì giờ ra thực tế trước 19:00.
 - **Phân bổ:** sau khi xác định `W` bằng giờ ra đã áp block, ngày thường tiếp tục phân bổ 8 giờ đầu 100% và phần vượt 8 giờ 150%; Chủ nhật tiếp tục đưa toàn bộ `W` vào 200% theo DEC-010.
 - **Audit/revision:** engine version `2026-10-24-dec011`; input hash chứa rule snapshot. Tính lại phải tạo revision mới; kỳ `LOCKED/PUBLISHED` không được sửa trực tiếp.
 - **Quan hệ quyết định:** DEC-011 mở rộng block 30 phút của DEC-009 từ phần sau 19:00 sang toàn bộ giờ ra Ca 1; không thay đổi Ca 3 của DEC-008 hay phân bổ Chủ nhật của DEC-010.
 - **Tài liệu liên quan:** `01_BUSINESS_REQUIREMENTS.md`, `02_ATTENDANCE_RULES.md`, `08_TEST_CASES.md`, `13_PROGRESS_REPORT.md`, `TEST_REPORT.md`.
 
+## DEC-012 – Dòng nghỉ Chủ nhật không có dữ liệu chấm công
+
+- **Trạng thái:** `CONFIRMED`.
+- **Ngày xác nhận:** 24/10/2026.
+- **Người xác nhận:** Chủ dự án.
+- **Nội dung:** Chủ nhật là ngày nghỉ. Khi `Ngày chấm công` là Chủ nhật và cả `Giờ vào` lẫn `Giờ ra` đều trống, dòng nguồn không cần xử lý ngoại lệ: không sinh/promote `NO_ATTENDANCE`, `INVALID_SHIFT`, `TIMESTAMP_EVIDENCE_REQUIRED`, `UNSUPPORTED_SHIFT_FOR_CALCULATION`, `EMPLOYEE_NOT_FOUND` hoặc calculation. Raw và import evidence vẫn được giữ nguyên. Ngoại lệ lịch sử của các dòng này được revalidate thành `RESOLVED` với actor/reason, không xóa lịch sử.
+- **Biên an toàn:** Chỉ miễn ngoại lệ khi cả hai giờ đều trống và ngày ISO hợp lệ đúng Chủ nhật. Nếu có một trong hai giờ, hệ thống tiếp tục kiểm tra đầy đủ; nếu có chấm công hợp lệ thì vẫn tính toàn bộ công Chủ nhật theo DEC-010 (Ca 1 mức 200%, Ca 3 mức 230%). Ngày khác không có dữ liệu tiếp tục theo quy tắc `NO_ATTENDANCE` hiện hành.
+- **Quan hệ quyết định:** DEC-012 chốt phần `NO_ATTENDANCE` cho ngày nghỉ Chủ nhật của DEC-006. Ngày nghỉ lễ công ty được chốt riêng tại DEC-013; phép, nghỉ bù và ngày thường vẫn OPEN theo Q13.
+- **Tài liệu liên quan:** `02_ATTENDANCE_RULES.md`, `08_TEST_CASES.md`, `12_OPEN_QUESTIONS.md`, `13_PROGRESS_REPORT.md`, `TEST_REPORT.md`.
+
+## DEC-013 – Ngày nghỉ lễ công ty do HR cấu hình
+
+- **Trạng thái:** `CONFIRMED`.
+- **Ngày xác nhận:** 24/10/2026.
+- **Người xác nhận:** Chủ dự án.
+- **Nội dung:** HR hoặc ADMIN cấu hình ngày nghỉ lễ toàn công ty bằng ngày ISO và tên ngày nghỉ. Khi ngày nguồn khớp cấu hình và cả giờ vào/ra đều trống, hệ thống giữ raw/import evidence nhưng không hiển thị lỗi chấm công ở preview, không promote ngoại lệ và không tạo calculation. Ngoại lệ OPEN lịch sử được revalidate thành `RESOLVED` với actor/reason/audit.
+- **Biên an toàn:** Nếu có một trong hai giờ thì vẫn validation/tính bình thường. Quyết định này không tự tạo hệ số công ngày lễ; trường hợp có đi làm ngày lễ tiếp tục dùng rule ca/ngày hiện hành cho tới khi HR chốt hệ số riêng. Cấu hình không được sửa trực tiếp khi kỳ `LOCKED/PUBLISHED`; không cho xóa ngày đã có raw import để tránh âm thầm làm sống lại ngoại lệ.
+- **Phạm vi quyền và dữ liệu:** danh mục dùng chung toàn công ty, ngày là duy nhất; ADMIN/HR được tạo/xóa, MANAGER chỉ xem. Không tạo master nhân viên/phòng ban/lịch phân ca.
+- **Tài liệu liên quan:** `02_ATTENDANCE_RULES.md`, `05_API_SPECIFICATION.md`, `06_UI_UX_SPECIFICATION.md`, `07_WORKFLOW.md`, `08_TEST_CASES.md`, `12_OPEN_QUESTIONS.md`, `13_PROGRESS_REPORT.md`, `TEST_REPORT.md`.
+
+## DEC-014 – Đi muộn và về sớm tính theo lượt
+
+- **Trạng thái:** `CONFIRMED`.
+- **Ngày xác nhận:** 26/10/2026.
+- **Người xác nhận:** Chủ dự án.
+- **Hiệu lực tính toán:** từ ngày công 01/09/2026, nhất quán với các rule Ca 1/Ca 3 hiện hành; áp dụng bằng Ca 1 rule version 5 và Ca 3 rule version 4. Không sửa hoặc xóa calculation lịch sử.
+- **Đơn vị:** đi muộn và về sớm là số lượt trên mỗi dòng chấm công hợp lệ, mỗi chỉ tiêu nhận `0` hoặc `1`; báo cáo tháng cộng số lượt, không cộng hoặc hiển thị số giờ/phút.
+- **Đi muộn:** Ca 1 chỉ tính một lượt khi giờ vào thực tế **sau 08:01:00**; đúng 08:01:00 chưa tính. Ca 3 chỉ tính một lượt khi giờ vào thực tế **sau 22:01:00**; đúng 22:01:00 chưa tính.
+- **Về sớm:** giữ các mốc kết thúc ca đã duyệt và dùng giờ ra thực tế: Ca 1 trước 19:00 tính một lượt, Ca 3 trước 07:00 hôm sau tính một lượt. Chỉ tiêu này độc lập với giờ vào và với block giờ ra dùng để tính công.
+- **Dữ liệu và audit:** thêm `lateCount`/`earlyCount` vào calculation mới. Hai cột duration cũ được giữ chỉ để bảo toàn revision lịch sử, không còn dùng trong API/UI/export hiện hành. Raw và normalization timestamp giữ nguyên.
+- **Quan hệ quyết định:** DEC-014 thay đơn vị và mốc đi muộn trong DEC-008/DEC-009; không thay khung tính công, break, tier, Chủ nhật, ngày lễ hay quy tắc fail-closed.
+- **Tài liệu liên quan:** `01_BUSINESS_REQUIREMENTS.md`, `02_ATTENDANCE_RULES.md`, `08_TEST_CASES.md`, `13_PROGRESS_REPORT.md`, `TEST_REPORT.md`.
+
 ## Tổng hợp
 
-| Quyết định            | Đánh giá                              | Phần vẫn OPEN có ảnh hưởng chính                                |
-| --------------------- | ------------------------------------- | --------------------------------------------------------------- |
-| DEC-001 / Q03         | `CONFIRMED`                           | nguồn lịch và tiêu chí ánh xạ tin cậy                           |
-| DEC-002 / Q04         | `PARTIALLY_CONFIRMED`                 | tiêu chí suy ngày ra chi tiết                                   |
-| DEC-003 / Q05         | `PARTIALLY_CONFIRMED; KEY CONFIRMED`  | quy trình file sửa/file nhiều kỳ; khóa nhận diện trùng đã chốt  |
-| DEC-004 / Q06         | `CONFIRMED`                           | thao tác HR sau khi xác nhận nhiều lượt                         |
-| DEC-005 / Q08         | `CONFIRMED`                           | quản trị cấu hình và mã lỗi chi tiết                            |
-| DEC-006 / Q12         | `CONFIRMED`                           | taxonomy lỗi chặn và quyền xử lý                                |
-| DEC-007 / Q03/Q04/Q07 | `CONFIRMED` cho nguồn import hiện tại | tạo master nhân viên từ file và alias khác `Ca1`/`Ca3` vẫn OPEN |
-| DEC-008 / Ca 3        | `CONFIRMED`                           | expected HR/UAT trên toàn bộ dữ liệu thật vẫn OPEN              |
-| DEC-009 / Ca 1        | `CONFIRMED`                           | expected HR/UAT trên toàn bộ dữ liệu thật vẫn OPEN              |
-| DEC-010 / Chủ nhật    | `CONFIRMED`                           | expected HR/UAT trên toàn bộ dữ liệu thật vẫn OPEN              |
-| DEC-011 / block Ca 1  | `CONFIRMED`                           | expected HR/UAT trên toàn bộ dữ liệu thật vẫn OPEN              |
+| Quyết định                | Đánh giá                              | Phần vẫn OPEN có ảnh hưởng chính                                |
+| ------------------------- | ------------------------------------- | --------------------------------------------------------------- |
+| DEC-001 / Q03             | `CONFIRMED`                           | nguồn lịch và tiêu chí ánh xạ tin cậy                           |
+| DEC-002 / Q04             | `PARTIALLY_CONFIRMED`                 | tiêu chí suy ngày ra chi tiết                                   |
+| DEC-003 / Q05             | `PARTIALLY_CONFIRMED; KEY CONFIRMED`  | quy trình file sửa/file nhiều kỳ; khóa nhận diện trùng đã chốt  |
+| DEC-004 / Q06             | `CONFIRMED`                           | thao tác HR sau khi xác nhận nhiều lượt                         |
+| DEC-005 / Q08             | `CONFIRMED`                           | quản trị cấu hình và mã lỗi chi tiết                            |
+| DEC-006 / Q12             | `CONFIRMED`                           | taxonomy lỗi chặn và quyền xử lý                                |
+| DEC-007 / Q03/Q04/Q07     | `CONFIRMED` cho nguồn import hiện tại | tạo master nhân viên từ file và alias khác `Ca1`/`Ca3` vẫn OPEN |
+| DEC-008 / Ca 3            | `CONFIRMED`                           | expected HR/UAT trên toàn bộ dữ liệu thật vẫn OPEN              |
+| DEC-009 / Ca 1            | `CONFIRMED`                           | expected HR/UAT trên toàn bộ dữ liệu thật vẫn OPEN              |
+| DEC-010 / Chủ nhật        | `CONFIRMED`                           | expected HR/UAT trên toàn bộ dữ liệu thật vẫn OPEN              |
+| DEC-011 / block Ca 1      | `CONFIRMED`                           | expected HR/UAT trên toàn bộ dữ liệu thật vẫn OPEN              |
+| DEC-012 / nghỉ Chủ nhật   | `CONFIRMED`                           | lịch lễ/phép/nghỉ bù và ngày thường không dữ liệu vẫn OPEN      |
+| DEC-013 / nghỉ lễ công ty | `CONFIRMED`                           | hệ số đi làm ngày lễ, phép/nghỉ bù vẫn OPEN                     |
+| DEC-014 / lượt muộn, sớm  | `CONFIRMED`                           | expected HR/UAT trên dữ liệu thật vẫn OPEN                      |
